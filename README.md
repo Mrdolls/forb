@@ -9,4 +9,4 @@
 This command creates a hidden directory `.forb` in your `$HOME`, installs the script, and sets up a global alias for easy access.
 
 ```bash
-bash -c "$(curl -fsSL [https://raw.githubusercontent.com/Mrdolls/forb/main/install.sh](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh))"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Mrdolls/forb/refs/heads/main/install.sh)"
