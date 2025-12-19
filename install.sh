@@ -7,26 +7,36 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 # --- CONFIGURATION ---
+# Remplace bien l'URL si ton dépôt n'est pas sur la branche 'main'
 INSTALL_DIR="$HOME/.forb"
 REPO_URL="https://raw.githubusercontent.com/Mrdolls/forb/main"
 
 echo -e "${BLUE}[ℹ] Installing ForbCheck to $INSTALL_DIR...${NC}"
 
-# 1. Create directory
+# 1. Création du dossier
 mkdir -p "$INSTALL_DIR"
 
-# 2. Download files from GitHub
-echo -e "${BLUE}[ℹ] Downloading files...${NC}"
+# 2. Téléchargement des fichiers depuis GitHub
+echo -e "${BLUE}[ℹ] Downloading files from repository...${NC}"
 
+# Téléchargement du script principal
 curl -fsSL "$REPO_URL/forb.sh" -o "$INSTALL_DIR/forb.sh"
-if [ $? -ne 0 ]; then echo -e "${RED}✘ Error downloading forb.sh${NC}"; exit 1; fi
+if [ $? -ne 0 ]; then 
+    echo -e "${RED}✘ Error: Could not download forb.sh from $REPO_URL${NC}"
+    exit 1
+fi
 
+# Téléchargement de la liste de fonctions
 curl -fsSL "$REPO_URL/authorize.txt" -o "$INSTALL_DIR/authorize.txt"
-if [ $? -ne 0 ]; then echo -e "${RED}✘ Error downloading authorize.txt${NC}"; exit 1; fi
+if [ $? -ne 0 ]; then 
+    echo -e "${RED}✘ Error: Could not download authorize.txt${NC}"
+    exit 1
+fi
 
+# Droits d'exécution
 chmod +x "$INSTALL_DIR/forb.sh"
 
-# 3. Alias setup
+# 3. Configuration de l'Alias
 SHELL_CONFIG=""
 if [ -f "$HOME/.zshrc" ]; then
     SHELL_CONFIG="$HOME/.zshrc"
@@ -37,15 +47,12 @@ fi
 ALIAS_LINE="alias forb='bash $INSTALL_DIR/forb.sh'"
 
 if [ -n "$SHELL_CONFIG" ]; then
-    if ! grep -q "alias forb=" "$SHELL_CONFIG"; then
-        echo "$ALIAS_LINE" >> "$SHELL_CONFIG"
-        echo -e "${GREEN}[✔] Alias added to $SHELL_CONFIG${NC}"
-    else
-        # Update alias if it exists but might be wrong
-        sed -i "/alias forb=/c\\$ALIAS_LINE" "$SHELL_CONFIG"
-        echo -e "${GREEN}[✔] Alias updated in $SHELL_CONFIG${NC}"
-    fi
+    # On nettoie les anciens alias pour éviter les doublons et on ajoute le nouveau
+    sed -i '/alias forb=/d' "$SHELL_CONFIG"
+    echo "$ALIAS_LINE" >> "$SHELL_CONFIG"
+    echo -e "${GREEN}[✔] Alias set in $SHELL_CONFIG${NC}"
 fi
 
+echo -e "--------------------------------------------------"
 echo -e "${GREEN}Installation complete!${NC}"
-echo -e "Please restart your terminal or run: ${BLUE}source $SHELL_CONFIG${NC}"
+echo -e "Please run: ${BLUE}source $SHELL_CONFIG${NC} to start using 'forb'."
