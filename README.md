@@ -1,12 +1,12 @@
 # ForbCheck – 42 Forbidden Functions Detector
 
-**ForbCheck** est un outil d'automatisation pour les étudiants de l'école 42. Il permet de vérifier instantanément si votre binaire utilise des fonctions non autorisées par le sujet, en comparant les symboles de votre exécutable avec une liste blanche personnalisable.
+**ForbCheck** is a lightweight automation tool designed for 42 School students. It instantly verifies if your binary uses functions that are not authorized by the project subject by comparing your executable's symbols against a customizable whitelist.
 
 ---
 
-## 🚀 Installation Rapide
+## Quick Installation
 
-Cette commande crée un dossier caché `.forb` dans votre `$HOME`, y installe le script et configure un alias pour une utilisation globale.
+This command creates a hidden directory `.forb` in your `$HOME`, installs the script, and sets up a global alias for easy access.
 
 ```bash
-bash -c "$(curl -fsSL [https://raw.githubusercontent.com/VOTRE_USERNAME/VOTRE_DEPOT/main/install.sh](https://raw.githubusercontent.com/VOTRE_USERNAME/VOTRE_DEPOT/main/install.sh))"
+bash -c "$(curl -fsSL [https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/install.sh))"
