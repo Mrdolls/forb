@@ -1,58 +1,44 @@
 #!/bin/bash
 
-# --- COLORS ---
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-RED='\033[0;31m'
-NC='\033[0m'
-
 # --- CONFIGURATION ---
-# Remplace bien l'URL si ton dépôt n'est pas sur la branche 'main'
+REPO_URL="https://github.com/Mrdolls/forb.git" # Ton URL Git
 INSTALL_DIR="$HOME/.forb"
-REPO_URL="https://raw.githubusercontent.com/Mrdolls/forb/main"
+COMMAND_NAME="forb"
 
-echo -e "${BLUE}[ℹ] Installing ForbCheck to $INSTALL_DIR...${NC}"
+# --- COULEURS ---
+C_BLUE='\033[0;34m'
+C_GREEN='\033[0;32m'
+C_RED='\033[0;31m'
+C_RESET='\033[0m'
 
-# 1. Création du dossier
-mkdir -p "$INSTALL_DIR"
+main() {
+    echo -e "${C_BLUE}Installing ForbCheck...${C_RESET}"
 
-# 2. Téléchargement des fichiers depuis GitHub
-echo -e "${BLUE}[ℹ] Downloading files from repository...${NC}"
+    # 1. CLONAGE OU UPDATE
+    if [ -d "$INSTALL_DIR" ]; then
+        echo -e "Updating ForbCheck..."
+        cd "$INSTALL_DIR" && git pull > /dev/null 2>&1
+    else
+        echo -e "Cloning ForbCheck..."
+        git clone "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+    fi
 
-# Téléchargement du script principal
-curl -fsSL "$REPO_URL/forb.sh" -o "$INSTALL_DIR/forb.sh"
-if [ $? -ne 0 ]; then 
-    echo -e "${RED}✘ Error: Could not download forb.sh from $REPO_URL${NC}"
-    exit 1
-fi
+    # 2. CONFIGURATION SHELL
+    shell_name=$(basename "$SHELL")
+    case "$shell_name" in
+        zsh)   SHELL_CONFIG="$HOME/.zshrc" ;;
+        bash)  SHELL_CONFIG="$HOME/.bashrc" ;;
+        *)     SHELL_CONFIG="$HOME/.profile" ;;
+    esac
 
-# Téléchargement de la liste de fonctions
-curl -fsSL "$REPO_URL/authorize.txt" -o "$INSTALL_DIR/authorize.txt"
-if [ $? -ne 0 ]; then 
-    echo -e "${RED}✘ Error: Could not download authorize.txt${NC}"
-    exit 1
-fi
+    # 3. ALIAS (Pointant vers le fichier dans .forb)
+    ALIAS_COMMAND="alias $COMMAND_NAME='bash $INSTALL_DIR/forb.sh'"
+    if ! grep -qF "$ALIAS_COMMAND" "$SHELL_CONFIG"; then
+        echo -e "\n# Alias for ForbCheck" >> "$SHELL_CONFIG"
+        echo "$ALIAS_COMMAND" >> "$SHELL_CONFIG"
+    fi
 
-# Droits d'exécution
-chmod +x "$INSTALL_DIR/forb.sh"
+    echo -e "${C_GREEN}✔ Installation successful! Restart your terminal or run 'source $SHELL_CONFIG'${C_RESET}"
+}
 
-# 3. Configuration de l'Alias
-SHELL_CONFIG=""
-if [ -f "$HOME/.zshrc" ]; then
-    SHELL_CONFIG="$HOME/.zshrc"
-elif [ -f "$HOME/.bashrc" ]; then
-    SHELL_CONFIG="$HOME/.bashrc"
-fi
-
-ALIAS_LINE="alias forb='bash $INSTALL_DIR/forb.sh'"
-
-if [ -n "$SHELL_CONFIG" ]; then
-    # On nettoie les anciens alias pour éviter les doublons et on ajoute le nouveau
-    sed -i '/alias forb=/d' "$SHELL_CONFIG"
-    echo "$ALIAS_LINE" >> "$SHELL_CONFIG"
-    echo -e "${GREEN}[✔] Alias set in $SHELL_CONFIG${NC}"
-fi
-
-echo -e "--------------------------------------------------"
-echo -e "${GREEN}Installation complete!${NC}"
-echo -e "Please run: ${BLUE}source $SHELL_CONFIG${NC} to start using 'forb'."
+main
