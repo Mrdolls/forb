@@ -42,7 +42,6 @@ for arg in "$@"; do
     esac
 done
 
-# --- ARGUMENT CHECK ---
 if [ -z "$TARGET" ]; then
     echo -e "${BLUE}ForbCheck v$VERSION${NC}"
     echo -e "${YELLOW}Usage:${NC}"
@@ -55,7 +54,6 @@ if [ -z "$TARGET" ]; then
     exit 1
 fi
 
-# --- AUTO-COMPILATION ---
 if [ ! -f "$TARGET" ] && [ -f "Makefile" ]; then
     echo -e "${YELLOW}[ℹ] '$TARGET' not found, compiling...${NC}"
     make -j > /dev/null 2>&1
@@ -66,37 +64,31 @@ if [ ! -f "$TARGET" ]; then
     exit 1
 fi
 
-# Load authorized list
 AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" | tr -d '\r' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
 
 echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║          ForbCheck Detector         ║${NC}"
 echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
+
 echo -e "${BLUE}Target bin :${NC} $TARGET"
 [ "$USE_MLX" = true ] && echo -e "${BLUE}Mode       :${NC} MiniLibX (X11 Filtered)"
 [ "$USE_MATH" = true ] && echo -e "${BLUE}Mode       :${NC} Math Lib (Math Filtered)"
+
 echo "---------------------------------------"
 
-# Extract symbols
 raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//')
 
 errors=0
+
 while read -r func; do
     [ -z "$func" ] && continue
-
-    # 1. SYSTEM FILTERING
     if [[ "$func" =~ ^__ ]] || [[ "$func" =~ ^_ ]] || [[ "$func" =~ ^ITM ]] || \
        [[ "$func" == "edata" ]] || [[ "$func" == "end" ]] || [[ "$func" == "bss_start" ]]; then
         continue
     fi
-
-    # 2. MLX FILTERING (-mi)
     if [ "$USE_MLX" = true ] && [[ "$func" =~ ^X ]]; then
         continue
     fi
-
-    # 3. MATH FILTERING (-lm)
-    # List of common math symbols linked via libm
     if [ "$USE_MATH" = true ]; then
         if [[ "$func" =~ ^(abs|cos|sin|tan|acos|asin|atan|atan2|cosh|sinh|tanh|exp|log|log10|pow|sqrt|ceil|floor|fabs|ldexp|frexp|modf|fmod)f?$ ]]; then
             continue
@@ -105,44 +97,40 @@ while read -r func; do
 
 trace_origin() {
     local func=$1
-    # 1. On trouve tous les fichiers .o récursivement
     local all_objs=$(find . -name "*.o" -type f 2>/dev/null)
 
     if [ -z "$all_objs" ]; then
         echo -e "          ${YELLOW}↳ No .o files found. Run 'make' first.${NC}"
         return
     fi
-
-    # 2. Utilisation de nm pour voir quels .o appellent la fonction (U = Undefined, donc appelé)
-    # On filtre pour ne garder que les fichiers qui utilisent réellement la fonction
     local found=""
     for obj in $all_objs; do
         if nm "$obj" 2>/dev/null | grep -q "U $func$"; then
             found+="$(basename "$obj" .o) "
         fi
     done
-
-    # 3. Affichage propre
-    if [ -n "$found" ]; then
-        # On retire les doublons et on affiche
-        local unique_found=$(echo "$found" | tr ' ' '\n' | sort -u | tr '\n' ' ')
-        echo -e "          ${YELLOW}↳ Found in your code: ${BLUE}${unique_found}${NC}"
+    if [ -n "$found" ] && [ "$found" != " " ]; then
+        echo -e "          ${YELLOW}↳ Found in your code: ${BLUE}${found}${NC}"
+        if [[ "$func" =~ ^(memcpy|puts|memset|strlen)$ ]]; then
+            echo -e "          ${BLUE}   Try adding '-fno-builtin' to your CFLAGS in Makefile.${NC}"
+        fi
     else
         echo -e "          ${YELLOW}↳ Not found in your .o files: ${NC}likely from a linked library (MLX/Math)"
     fi
 }
 
-    # 4. FINAL CHECK against authorize.txt
-    if echo "$AUTH_FUNCS" | grep -qx "$func"; then
-        [ "$SHOW_ALL" = true ] && printf "  [${GREEN}OK${NC}]        -> %s\n" "$func"
-    else
-        printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$func"
-        trace_origin "$func"
-        errors=$((errors + 1))
-    fi
+if echo "$AUTH_FUNCS" | grep -qx "$func"; then
+    [ "$SHOW_ALL" = true ] && printf "  [${GREEN}OK${NC}]        -> %s\n" "$func"
+else
+    printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$func"
+    trace_origin "$func"
+    errors=$((errors + 1))
+fi
+
 done <<< "$raw_funcs"
 
 echo "---------------------------------------"
+
 if [ $errors -eq 0 ]; then
     echo -e "${GREEN}✔ RESULT: PERFECT${NC}"
 else
