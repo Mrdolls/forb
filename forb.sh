@@ -67,7 +67,7 @@ for arg in "$@"; do
             else nano "$AUTH_FILE"; fi
             exit 0 ;;
         -a)  SHOW_ALL=true ;;
-        -mi) USE_MLX=true ;;
+        -mlx) USE_MLX=true ;;
         -lm) USE_MATH=true ;;
         -*)  echo -e "${RED}Unknown option: $arg${NC}"; exit 1 ;;
         *)   TARGET=$arg ;;
