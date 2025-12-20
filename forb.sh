@@ -46,8 +46,9 @@ for arg in "$@"; do
 done
 
 if [ -z "$TARGET" ]; then
-    echo -e "${BLUE}ForbCheck v$VERSION (Speedster Edition)${NC}"
+    echo -e "${BLUE}ForbCheck v$VERSION${NC}"
     echo -e "${YELLOW}Usage:${NC} forb [-a] [-mlx] [-lm] <executable>"
+    echo -e "Try '${YELLOW}forb -h${NC}' for help."
     exit 1
 fi
 
