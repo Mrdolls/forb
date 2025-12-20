@@ -1,4 +1,5 @@
 # forb
+<img width="394" height="190" alt="image" src="https://github.com/user-attachments/assets/8b3ac2eb-bb1a-46fe-b255-83398cd89623" />
 
 ## Overview
 
@@ -111,3 +112,4 @@ It aims to behave as closely as possible to what an evaluator would detect, with
 ## Version
 
 Current version: **2.0.0**
+
