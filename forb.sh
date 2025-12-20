@@ -10,52 +10,35 @@ NC="\033[0m"
 # --- FIXED PATHS ---
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
-VERSION="1.6.0"
-
-# --- UNINSTALL FUNCTION ---
-uninstall_forb() {
-    echo -e "${RED}[ℹ] Uninstalling ForbCheck...${NC}"
-    
-    # Remove the alias from .zshrc and .bashrc
-    sed -i '/alias forb=/d' ~/.zshrc 2>/dev/null
-    sed -i '/alias forb=/d' ~/.bashrc 2>/dev/null
-    
-    # Remove the installation directory
-    rm -rf "$INSTALL_DIR"
-    
-    echo -e "${GREEN}[✔] ForbCheck has been successfully removed.${NC}"
-    echo -e "${YELLOW}[!] Please restart your terminal or run 'unalias forb' to finish.${NC}"
-    exit 0
-}
-
-# --- EDITOR DETECTION ---
-open_editor() {
-    if command -v code &> /dev/null; then
-        echo -e "${BLUE}[ℹ] Opening with VS Code...${NC}"
-        code --wait "$1"
-    elif command -v vim &> /dev/null; then
-        echo -e "${BLUE}[ℹ] Opening with Vim...${NC}"
-        vim "$1"
-    elif command -v nano &> /dev/null; then
-        echo -e "${BLUE}[ℹ] Opening with Nano...${NC}"
-        nano "$1"
-    else
-        echo -e "${RED}✘ Error: No suitable editor found (code, vim, or nano).${NC}"
-        exit 1
-    fi
-}
+VERSION="1.8.0"
 
 # --- OPTION HANDLING ---
 SHOW_ALL=false
+USE_MLX=false
+USE_MATH=false
 TARGET=""
 
 for arg in "$@"; do
     case $arg in
-        -u) uninstall_forb ;;
-        -e) open_editor "$AUTH_FILE"; exit 0 ;;
-        -a) SHOW_ALL=true ;;
-        -*) echo -e "${RED}Unknown option: $arg${NC}"; exit 1 ;;
-        *)  TARGET=$arg ;;
+        -u) # Uninstall
+            echo -e "${RED}[ℹ] Uninstalling ForbCheck...${NC}"
+            sed -i '/alias forb=/d' ~/.zshrc 2>/dev/null
+            sed -i '/alias forb=/d' ~/.bashrc 2>/dev/null
+            rm -rf "$INSTALL_DIR"
+            echo -e "${GREEN}[✔] Removed. Run 'unalias forb' to finish.${NC}"
+            exit 0
+            ;;
+        -e) # Edit
+            if command -v code &> /dev/null; then code --wait "$AUTH_FILE"
+            elif command -v vim &> /dev/null; then vim "$AUTH_FILE"
+            else nano "$AUTH_FILE"; fi
+            exit 0
+            ;;
+        -a)  SHOW_ALL=true ;;
+        -mi) USE_MLX=true ;;
+        -lm) USE_MATH=true ;;
+        -*)  echo -e "${RED}Unknown option: $arg${NC}"; exit 1 ;;
+        *)   TARGET=$arg ;;
     esac
 done
 
@@ -63,16 +46,18 @@ done
 if [ -z "$TARGET" ]; then
     echo -e "${BLUE}ForbCheck v$VERSION${NC}"
     echo -e "${YELLOW}Usage:${NC}"
-    echo -e "  forb <executable>    Check for forbidden functions (Silent OK)"
-    echo -e "  forb -a <executable> Show all functions (including OK)"
-    echo -e "  forb -e              Edit the master authorize.txt list"
-    echo -e "  forb -u              Uninstall ForbCheck"
+    echo -e "  forb <executable>      Check for forbidden functions"
+    echo -e "  forb -a <executable>   Show all functions (including OK)"
+    echo -e "  forb -mi <executable>  MiniLibX mode (filters X11 symbols)"
+    echo -e "  forb -lm <executable>  Math mode (filters standard math functions)"
+    echo -e "  forb -e                Edit the master authorize.txt list"
+    echo -e "  forb -u                Uninstall ForbCheck"
     exit 1
 fi
 
 # --- AUTO-COMPILATION ---
 if [ ! -f "$TARGET" ] && [ -f "Makefile" ]; then
-    echo -e "${YELLOW}[ℹ] '$TARGET' not found, attempting to compile...${NC}"
+    echo -e "${YELLOW}[ℹ] '$TARGET' not found, compiling...${NC}"
     make -j > /dev/null 2>&1
 fi
 
@@ -81,13 +66,15 @@ if [ ! -f "$TARGET" ]; then
     exit 1
 fi
 
-# Load and clean the master list
+# Load authorized list
 AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" | tr -d '\r' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
 
 echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║          ForbCheck Detector         ║${NC}"
 echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
 echo -e "${BLUE}Target bin :${NC} $TARGET"
+[ "$USE_MLX" = true ] && echo -e "${BLUE}Mode       :${NC} MiniLibX (X11 Filtered)"
+[ "$USE_MATH" = true ] && echo -e "${BLUE}Mode       :${NC} Math Lib (Math Filtered)"
 echo "---------------------------------------"
 
 # Extract symbols
@@ -96,21 +83,68 @@ raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//')
 errors=0
 while read -r func; do
     [ -z "$func" ] && continue
+
+    # 1. SYSTEM FILTERING
     if [[ "$func" =~ ^__ ]] || [[ "$func" =~ ^_ ]] || [[ "$func" =~ ^ITM ]] || \
        [[ "$func" == "edata" ]] || [[ "$func" == "end" ]] || [[ "$func" == "bss_start" ]]; then
         continue
     fi
+
+    # 2. MLX FILTERING (-mi)
+    if [ "$USE_MLX" = true ] && [[ "$func" =~ ^X ]]; then
+        continue
+    fi
+
+    # 3. MATH FILTERING (-lm)
+    # List of common math symbols linked via libm
+    if [ "$USE_MATH" = true ]; then
+        if [[ "$func" =~ ^(abs|cos|sin|tan|acos|asin|atan|atan2|cosh|sinh|tanh|exp|log|log10|pow|sqrt|ceil|floor|fabs|ldexp|frexp|modf|fmod)f?$ ]]; then
+            continue
+        fi
+    fi
+
+trace_origin() {
+    local func=$1
+    # 1. On trouve tous les fichiers .o récursivement
+    local all_objs=$(find . -name "*.o" -type f 2>/dev/null)
+
+    if [ -z "$all_objs" ]; then
+        echo -e "          ${YELLOW}↳ No .o files found. Run 'make' first.${NC}"
+        return
+    fi
+
+    # 2. Utilisation de nm pour voir quels .o appellent la fonction (U = Undefined, donc appelé)
+    # On filtre pour ne garder que les fichiers qui utilisent réellement la fonction
+    local found=""
+    for obj in $all_objs; do
+        if nm "$obj" 2>/dev/null | grep -q "U $func$"; then
+            found+="$(basename "$obj" .o) "
+        fi
+    done
+
+    # 3. Affichage propre
+    if [ -n "$found" ]; then
+        # On retire les doublons et on affiche
+        local unique_found=$(echo "$found" | tr ' ' '\n' | sort -u | tr '\n' ' ')
+        echo -e "          ${YELLOW}↳ Found in your code: ${BLUE}${unique_found}${NC}"
+    else
+        echo -e "          ${YELLOW}↳ Not found in your .o files: ${NC}likely from a linked library (MLX/Math)"
+    fi
+}
+
+    # 4. FINAL CHECK against authorize.txt
     if echo "$AUTH_FUNCS" | grep -qx "$func"; then
         [ "$SHOW_ALL" = true ] && printf "  [${GREEN}OK${NC}]        -> %s\n" "$func"
     else
         printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$func"
+        trace_origin "$func"
         errors=$((errors + 1))
     fi
 done <<< "$raw_funcs"
 
 echo "---------------------------------------"
 if [ $errors -eq 0 ]; then
-    echo -e "${GREEN}✔ RESULT: PERFECT (No forbidden functions)${NC}"
+    echo -e "${GREEN}✔ RESULT: PERFECT${NC}"
 else
     echo -e "${RED}✘ RESULT: FAILURE ($errors forbidden calls found)${NC}"
     exit 1
