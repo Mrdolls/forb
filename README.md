@@ -86,8 +86,8 @@ forb [options] <executable>
 
 ## Typical Workflow
 
-1. Compile your project
-2. Run `forb -e` for editing the allowed fonctions list
+1. Run `forb -e` for editing the allowed fonctions list
+2. Compile your project
 3. Run `forb` on the resulting executable
 4. Inspect forbidden calls and their origin
 5. Fix violations and recompile
@@ -113,5 +113,6 @@ It aims to behave as closely as possible to what an evaluator would detect, with
 ## Version
 
 Current version: **2.0.0**
+
 
 
