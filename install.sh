@@ -51,7 +51,7 @@ main() {
         echo -e "${C_GREEN}✔ Alias 'forb' verified/updated.${C_RESET}"
     fi
 
-    echo -e "\n${C_GREEN}🎉 All done!${C_RESET}"
+    echo -e "\n${C_GREEN}All done!${C_RESET}"
     echo -e "Please run: ${C_BLUE}source $SHELL_CONFIG${C_RESET} to refresh your terminal."
 }
 
