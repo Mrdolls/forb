@@ -75,6 +75,7 @@ forb [options] <executable>
 
 ### Common Options
 
+* `-h/--help`    Show help message
 * `-a`   Show all detected symbols (including allowed and skipped)
 * `-mlx` Enable MiniLibX filter
 * `-lm`  Enable math library filter
@@ -112,4 +113,5 @@ It aims to behave as closely as possible to what an evaluator would detect, with
 ## Version
 
 Current version: **2.0.0**
+
 
