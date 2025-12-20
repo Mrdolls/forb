@@ -92,6 +92,7 @@ forb [options] <executable>
 4. Inspect forbidden calls and their origin
 5. Fix violations and recompile
 
+Pro Tip: For maximum reliability, compile your project using `gcc` with the `-fno-builtin` flag. This prevents the compiler from using internal optimizations that might bypass standard function calls, ensuring 100% accuracy with ForbCheck.
 ---
 
 ## Why forb Exists
@@ -113,6 +114,7 @@ It aims to behave as closely as possible to what an evaluator would detect, with
 ## Version
 
 Current version: **2.0.0**
+
 
 
 
