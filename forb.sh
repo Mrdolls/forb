@@ -26,6 +26,17 @@ for arg in "$@"; do
             if command -v code &> /dev/null; then code --wait "$AUTH_FILE"
             elif command -v vim &> /dev/null; then vim "$AUTH_FILE"
             else nano "$AUTH_FILE"; fi; exit 0 ;;
+        -h|--help)
+            echo -e "${BLUE}ForbCheck v$VERSION${NC}"
+            echo -e "${YELLOW}Usage:${NC} forb [options] <executable>"
+            echo -e "\n${YELLOW}Options:${NC}"
+            echo -e "  ${GREEN}-a${NC}      Show all details (verbose mode)"
+            echo -e "  ${GREEN}-mlx${NC}    Exclude MiniLibX functions"
+            echo -e "  ${GREEN}-lm${NC}     Exclude Math library functions"
+            echo -e "  ${GREEN}-e${NC}      Edit authorized functions list"
+            echo -e "  ${GREEN}-u${NC}      Uninstall ForbCheck"
+            echo -e "  ${GREEN}-h${NC}      Show this help message"
+            exit 0 ;;
         -a)  SHOW_ALL=true ;;
         -mlx) USE_MLX=true ;;
         -lm) USE_MATH=true ;;
