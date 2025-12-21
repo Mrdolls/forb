@@ -198,10 +198,10 @@ total_errors=$?
 DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
 echo "---------------------------------------"
 if [ $total_errors -eq 0 ]; then
-    echo -ne "${GREEN}✔ RESULT: PERFECT${NC}"
+    echo -ne "${GREEN}RESULT: PERFECT${NC}"
 else
     [ $total_errors -gt 1 ] && s="s" || s=""
-    echo -ne "${RED}✘ RESULT: FAILURE ($total_errors call$s found)${NC}"
+    echo -ne "${RED}RESULT: FAILURE ($total_errors call$s found)${NC}"
 fi
 printf " [%0.2fs]\n" "$DURATION"
 
