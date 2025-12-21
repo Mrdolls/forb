@@ -7,7 +7,7 @@ YELLOW="\033[0;33m"
 BLUE="\033[0;34m"
 NC="\033[0m"
 
-VERSION="3.2.2"
+VERSION="3.2.3"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -33,6 +33,51 @@ show_help() {
     printf "  %-18s %s\n" "-up, --update" "Check and install latest version"
     printf "  %-18s %s\n" "-e, --edit" "Edit authorized list"
     printf "  %-18s %s\n" "-u, --uninstall" "Remove ForbCheck"
+    exit 0
+}
+
+update_script() {
+    echo -e "${YELLOW}Checking for updates...${NC}"
+    # Détection du chemin réel du script
+    SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
+
+    remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
+    if [ -z "$remote_content" ]; then
+        echo -e "${RED}✘ Error: Could not reach update server.${NC}"
+        exit 1
+    fi
+
+    remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
+
+    if [ "$remote_version" == "$VERSION" ]; then
+        echo -e "${GREEN}[✔] Already up to date (v$VERSION).${NC}"
+    else
+        echo -e "${BLUE}Updating from v$VERSION to v$remote_version...${NC}"
+        tmp_file=$(mktemp)
+        echo "$remote_content" > "$tmp_file"
+        mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
+        echo -e "${GREEN}[✔] Updated successfully!${NC}"
+    fi
+    exit 0
+}
+
+edit_list() {
+    [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
+    if command -v code &>/dev/null; then
+        code --wait "$AUTH_FILE"
+    elif command -v vim &>/dev/null; then
+        vim "$AUTH_FILE"
+    else
+        nano "$AUTH_FILE"
+    fi
+    exit 0
+}
+
+uninstall_script() {
+    echo -e "${YELLOW}Uninstalling ForbCheck...${NC}"
+    sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
+    rm -rf "$INSTALL_DIR"
+    echo -e "${GREEN}[✔] ForbCheck removed.${NC}"
     exit 0
 }
 
@@ -116,23 +161,14 @@ run_analysis() {
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help) show_help ;;
-        -up|--update)
-            echo -e "${YELLOW}Checking for updates...${NC}"
-            SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
-            remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
-            remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
-            if [ "$remote_version" == "$VERSION" ]; then echo -e "${GREEN}[✔] Already up to date.${NC}"; exit 0; fi
-            tmp_file=$(mktemp); echo "$remote_content" > "$tmp_file"
-            mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
-            echo -e "${GREEN}[✔] Updated to v$remote_version!${NC}"; exit 0 ;;
+        -up|--update) update_script ;;
         -v) VERBOSE=true; shift ;;
         -r) FULL_PATH=true; shift ;;
         -a) SHOW_ALL=true; shift ;;
         -mlx) USE_MLX=true; shift ;;
         -lm) USE_MATH=true; shift ;;
-        -e) [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
-            command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE"; exit 0 ;;
-        -u) sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null; rm -rf "$INSTALL_DIR"; exit 0 ;;
+        -e) edit_list ;;
+        -u) uninstall_script ;;
         -f) shift; SPECIFIC_FILES="$@"; break ;;
         -*) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
         *) TARGET=$1; shift ;;
@@ -168,4 +204,5 @@ else
     echo -ne "${RED}✘ RESULT: FAILURE ($total_errors call$s found)${NC}"
 fi
 printf " [%0.2fs]\n" "$DURATION"
+
 [ $total_errors -ne 0 ] && exit 1
