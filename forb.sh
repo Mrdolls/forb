@@ -21,7 +21,7 @@ for arg in "$@"; do
             echo -e "\n${YELLOW}Options:${NC}"
             echo -e " ${GREEN}-h\t--help${NC}\t\tShow this help\n ${GREEN}-up\t--update${NC}\tUpdate ForbCheck\n ${GREEN}-a${NC}\t\t\tVerbose mode\n ${GREEN}-r\t\t\t${NC}Full paths\n ${GREEN}-mlx\t\t\t${NC}MLX Filter\n ${GREEN}-lm\t\t\t${NC}Math Filter\n ${GREEN}-e\t\t\t${NC}Edit list\n ${GREEN}-u\t\t\t${NC}Uninstall"
             exit 0 ;;
-        -up)
+        -up|--update)
             echo -e "${YELLOW}Checking for updates...${NC}"
             SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
             remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
