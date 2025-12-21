@@ -6,10 +6,11 @@ YELLOW="\033[0;33m"
 BLUE="\033[0;34m"
 NC="\033[0m"
 
-VERSION="2.5.0"
+VERSION="2.5.2"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
-UPDATE_URL="https://raw.githubusercontent.com/TON_USER/TON_REPO/main/forb.sh" # <--- METS TON LIEN ICI
+# /!\ REMPLACE CE LIEN PAR TON LIEN RAW GITHUB /!\
+UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
 SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; TARGET=""
 
@@ -21,15 +22,28 @@ for arg in "$@"; do
             echo -e "\n${YELLOW}Options:${NC}"
             echo -e "  ${GREEN}-up${NC}     Update ForbCheck\n  ${GREEN}-a${NC}      Verbose mode\n  ${GREEN}-r${NC}      Full paths\n  ${GREEN}-mlx${NC}    MLX Filter\n  ${GREEN}-lm${NC}     Math Filter\n  ${GREEN}-e${NC}      Edit list\n  ${GREEN}-u${NC}      Uninstall"
             exit 0 ;;
-        -up|--update)
+        -up)
             echo -e "${YELLOW}[⌛] Checking for updates...${NC}"
+            SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
+            
+            # Récupération de la version distante avec un timeout de 5s
+            remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
+            remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
+            
+            if [ -z "$remote_version" ]; then
+                echo -e "${RED}✘ Error: Could not reach update server.${NC}"
+                echo -e "${YELLOW}Verify your UPDATE_URL in the script.${NC}"; exit 1
+            elif [ "$remote_version" == "$VERSION" ]; then
+                echo -e "${GREEN}[✔] ForbCheck is already up to date (v$VERSION).${NC}"; exit 0
+            fi
+
+            echo -e "${BLUE}Update found: $VERSION -> $remote_version${NC}"
             tmp_file=$(mktemp)
-            if curl -sL "$UPDATE_URL" -o "$tmp_file"; then
-                mv "$tmp_file" "$(which forb)"
-                chmod +x "$(which forb)"
-                echo -e "${GREEN}[✔] ForbCheck updated successfully!${NC}"
+            if echo "$remote_content" > "$tmp_file"; then
+                mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
+                echo -e "${GREEN}[✔] ForbCheck updated to v$remote_version!${NC}"
             else
-                echo -e "${RED}✘ Error: Could not download update.${NC}"
+                echo -e "${RED}✘ Error: Download failed.${NC}"; rm -f "$tmp_file"
             fi
             exit 0 ;;
         -r) FULL_PATH=true ;;
