@@ -21,7 +21,7 @@ for arg in "$@"; do
             echo -e "\n${YELLOW}Options:${NC}"
             echo -e "  ${GREEN}-up${NC}     Update ForbCheck\n  ${GREEN}-a${NC}      Verbose mode\n  ${GREEN}-r${NC}      Full paths\n  ${GREEN}-mlx${NC}    MLX Filter\n  ${GREEN}-lm${NC}     Math Filter\n  ${GREEN}-e${NC}      Edit list\n  ${GREEN}-u${NC}      Uninstall"
             exit 0 ;;
-        -up)
+        -up|--update)
             echo -e "${YELLOW}[⌛] Checking for updates...${NC}"
             tmp_file=$(mktemp)
             if curl -sL "$UPDATE_URL" -o "$tmp_file"; then
