@@ -1,13 +1,23 @@
 #!/bin/bash
 
-BOLD="\033[1m"
-GREEN="\033[0;32m"
-RED="\033[0;31m"
-YELLOW="\033[0;33m"
-BLUE="\033[0;34m"
-NC="\033[0m"
+# --- COLOR MANAGEMENT ---
+if [[ -t 1 ]]; then
+    BOLD="\033[1m"
+    GREEN="\033[0;32m"
+    RED="\033[0;31m"
+    YELLOW="\033[0;33m"
+    BLUE="\033[0;34m"
+    NC="\033[0m"
+else
+    BOLD=""
+    GREEN=""
+    RED=""
+    YELLOW=""
+    BLUE=""
+    NC=""
+fi
 
-VERSION="3.2.3"
+VERSION="3.3.0"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -38,17 +48,13 @@ show_help() {
 
 update_script() {
     echo -e "${YELLOW}Checking for updates...${NC}"
-    # Détection du chemin réel du script
     SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
-
     remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
     if [ -z "$remote_content" ]; then
         echo -e "${RED}✘ Error: Could not reach update server.${NC}"
         exit 1
     fi
-
     remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
-
     if [ "$remote_version" == "$VERSION" ]; then
         echo -e "${GREEN}[✔] Already up to date (v$VERSION).${NC}"
     else
