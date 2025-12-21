@@ -2,22 +2,12 @@
 
 # --- COLOR MANAGEMENT ---
 if [[ -t 1 ]]; then
-    BOLD="\033[1m"
-    GREEN="\033[0;32m"
-    RED="\033[0;31m"
-    YELLOW="\033[0;33m"
-    BLUE="\033[0;34m"
-    NC="\033[0m"
+    BOLD="\033[1m"; GREEN="\033[0;32m"; RED="\033[0;31m"; YELLOW="\033[0;33m"; BLUE="\033[0;34m"; CYAN="\033[0;36m"; NC="\033[0m"
 else
-    BOLD=""
-    GREEN=""
-    RED=""
-    YELLOW=""
-    BLUE=""
-    NC=""
+    BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="3.3.0"
+VERSION="3.3.5"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -50,17 +40,13 @@ update_script() {
     echo -e "${YELLOW}Checking for updates...${NC}"
     SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
     remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
-    if [ -z "$remote_content" ]; then
-        echo -e "${RED}✘ Error: Could not reach update server.${NC}"
-        exit 1
-    fi
+    if [ -z "$remote_content" ]; then echo -e "${RED}✘ Error: Could not reach update server.${NC}"; exit 1; fi
     remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
     if [ "$remote_version" == "$VERSION" ]; then
         echo -e "${GREEN}[✔] Already up to date (v$VERSION).${NC}"
     else
-        echo -e "${BLUE}Updating from v$VERSION to v$remote_version...${NC}"
-        tmp_file=$(mktemp)
-        echo "$remote_content" > "$tmp_file"
+        echo -e "${BLUE}Updating to v$remote_version...${NC}"
+        tmp_file=$(mktemp); echo "$remote_content" > "$tmp_file"
         mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
         echo -e "${GREEN}[✔] Updated successfully!${NC}"
     fi
@@ -69,22 +55,11 @@ update_script() {
 
 edit_list() {
     [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
-    if command -v code &>/dev/null; then
-        code --wait "$AUTH_FILE"
-    elif command -v vim &>/dev/null; then
-        vim "$AUTH_FILE"
-    else
-        nano "$AUTH_FILE"
-    fi
-    exit 0
+    command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE" || nano "$AUTH_FILE"; exit 0
 }
 
 uninstall_script() {
-    echo -e "${YELLOW}Uninstalling ForbCheck...${NC}"
-    sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
-    rm -rf "$INSTALL_DIR"
-    echo -e "${GREEN}[✔] ForbCheck removed.${NC}"
-    exit 0
+    sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null; rm -rf "$INSTALL_DIR"; exit 0
 }
 
 crop_line() {
@@ -104,6 +79,11 @@ run_analysis() {
     local raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
     local forbidden_list=""
     local errors=0
+    local single_file_mode=false
+
+    if [ -n "$SPECIFIC_FILES" ] && [ $(echo "$SPECIFIC_FILES" | wc -w) -eq 1 ]; then
+        single_file_mode=true
+    fi
 
     while read -r func; do
         [ -z "$func" ] && continue
@@ -117,7 +97,7 @@ run_analysis() {
         else
             if grep -qE " U ${func}$" <<< "$ALL_UNDEFINED"; then
                 forbidden_list+="${func} "
-                errors=$((errors + 1))
+                if [ -z "$SPECIFIC_FILES" ]; then errors=$((errors + 1)); fi
             fi
         fi
     done <<< "$raw_funcs"
@@ -125,40 +105,55 @@ run_analysis() {
     [ -z "$forbidden_list" ] && return 0
 
     local pattern=$(echo "$forbidden_list" | sed 's/ /|/g; s/|$//')
+    local regex_pattern="\b(${pattern})\b"
     local grep_res
+
     if [ -n "$SPECIFIC_FILES" ]; then
-        grep_res=$(grep -HE "\b(${pattern})\b" $SPECIFIC_FILES -n 2>/dev/null | grep -vE "mlx|MLX")
+        local include_flags=""
+        for f in $SPECIFIC_FILES; do
+            include_flags+=" --include=\"$f\""
+        done
+        grep_res=$(eval grep -rHE \"$regex_pattern\" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")
     else
-        grep_res=$(grep -rHE "\b(${pattern})\b" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")
+        grep_res=$(grep -rHE "$regex_pattern" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")
     fi
 
     for f_name in $forbidden_list; do
-        printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
         local specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
 
         if [ -n "$specific_locs" ]; then
+            printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
+            if [ -n "$SPECIFIC_FILES" ]; then errors=$((errors + 1)); fi
+
             while read -r line; do
                 [ -z "$line" ] && continue
                 local f_path=$(echo "$line" | cut -d: -f1)
                 local l_num=$(echo "$line" | cut -d: -f2)
                 local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
-
                 local display_name=$( [ "$FULL_PATH" = true ] && echo "$f_path" | sed 's|^\./||' || basename "$f_path" )
 
-                if [ -n "$SPECIFIC_FILES" ] || [ "$VERBOSE" = true ]; then
-                    local s_crop=$(crop_line "$f_name" "$snippet")
-                    local pref=$l_num
-                    [ "$VERBOSE" = true ] || [ $(echo "$SPECIFIC_FILES" | wc -w) -gt 1 ] && pref="${display_name}:${l_num}"
-                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${pref}${NC}: ${s_crop}"
+                local loc_prefix=""
+                if [ "$single_file_mode" = true ] && [ "$VERBOSE" = false ]; then
+                     loc_prefix="line ${l_num}"
                 else
-                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${display_name}:${l_num}${NC}"
+                     loc_prefix="${display_name}:${l_num}"
+                fi
+
+                if [ "$VERBOSE" = true ]; then
+                    local s_crop=$(crop_line "$f_name" "$snippet")
+                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${loc_prefix}${NC}: ${CYAN}${s_crop}${NC}"
+                else
+                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${loc_prefix}${NC}"
                 fi
             done <<< "$specific_locs"
-        else
+
+        elif [ -z "$SPECIFIC_FILES" ]; then
+            printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
             local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sed 's/\.o//g' | sort -u | tr '\n' ' ')
             echo -e "          ${YELLOW}↳ Found in: ${BLUE}${files}${NC}"
         fi
     done
+
     return $errors
 }
 
@@ -192,6 +187,7 @@ echo -e "${YELLOW}╔═══════════════════�
 echo -e "${YELLOW}║          ForbCheck Detector         ║${NC}"
 echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
 echo -e "${BLUE}Target bin :${NC} $TARGET"
+[ -n "$SPECIFIC_FILES" ] && echo -e "${BLUE}Scope      :${NC} $SPECIFIC_FILES"
 echo "---------------------------------------"
 
 NM_RAW_DATA=$(find . -not -path '*/.*' -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 -P4 nm -A 2>/dev/null)
