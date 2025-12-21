@@ -6,10 +6,9 @@ YELLOW="\033[0;33m"
 BLUE="\033[0;34m"
 NC="\033[0m"
 
-VERSION="2.5.2"
+VERSION="2.5.3"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
-# /!\ REMPLACE CE LIEN PAR TON LIEN RAW GITHUB /!\
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
 SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; TARGET=""
@@ -23,20 +22,16 @@ for arg in "$@"; do
             echo -e " ${GREEN}-h\t--help${NC}\t\tShow this help\n ${GREEN}-up\t--update${NC}\tUpdate ForbCheck\n ${GREEN}-a${NC}\t\t\tVerbose mode\n ${GREEN}-r\t\t\t${NC}Full paths\n ${GREEN}-mlx\t\t\t${NC}MLX Filter\n ${GREEN}-lm\t\t\t${NC}Math Filter\n ${GREEN}-e\t\t\t${NC}Edit list\n ${GREEN}-u\t\t\t${NC}Uninstall"
             exit 0 ;;
         -up)
-            echo -e "${YELLOW}[⌛] Checking for updates...${NC}"
+            echo -e "${YELLOW}Checking for updates...${NC}"
             SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
-            
-            # Récupération de la version distante avec un timeout de 5s
             remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
             remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
-            
             if [ -z "$remote_version" ]; then
                 echo -e "${RED}✘ Error: Could not reach update server.${NC}"
                 echo -e "${YELLOW}Verify your UPDATE_URL in the script.${NC}"; exit 1
             elif [ "$remote_version" == "$VERSION" ]; then
                 echo -e "${GREEN}[✔] ForbCheck is already up to date (v$VERSION).${NC}"; exit 0
             fi
-
             echo -e "${BLUE}Update found: $VERSION -> $remote_version${NC}"
             tmp_file=$(mktemp)
             if echo "$remote_content" > "$tmp_file"; then
@@ -47,7 +42,7 @@ for arg in "$@"; do
             fi
             exit 0 ;;
         -r) FULL_PATH=true ;;
-        -e) 
+        -e)
             [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
             command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE" || nano "$AUTH_FILE"
             exit 0 ;;
