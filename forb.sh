@@ -1,42 +1,121 @@
 #!/bin/bash
 
+BOLD="\033[1m"
 GREEN="\033[0;32m"
 RED="\033[0;31m"
 YELLOW="\033[0;33m"
 BLUE="\033[0;34m"
 NC="\033[0m"
 
-VERSION="2.5.3"
-INSTALL_DIR="$HOME/.forb"
-AUTH_FILE="$INSTALL_DIR/authorize.txt"
-UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
-
-SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; TARGET=""
-
-for arg in "$@"; do
-    case $arg in
-        -h|--help)
-            echo -e "${BLUE}ForbCheck v$VERSION${NC}"#!/bin/bash
-
-GREEN="\033[0;32m"
-RED="\033[0;31m"
-YELLOW="\033[0;33m"
-BLUE="\033[0;34m"
-NC="\033[0m"
-
-VERSION="2.7.1"
+VERSION="3.2.2"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
 SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES=""
 
+# --- FUNCTIONS ---
+
+show_help() {
+    echo -e "${BOLD}ForbCheck v$VERSION${NC}"
+    echo -e "Usage: forb [options] <target> [-f <files...>]\n"
+    echo -e "${BOLD}Arguments:${NC}"
+    printf "  %-18s %s\n" "<target>" "Executable or library to analyze"
+    echo -e "\n${BOLD}Scan Options:${NC}"
+    printf "  %-18s %s\n" "-v, --verbose" "Show source code context"
+    printf "  %-18s %s\n" "-f <files...>" "Limit scan to specific files"
+    printf "  %-18s %s\n" "-r, --relative" "Show full relative paths"
+    printf "  %-18s %s\n" "-a, --all" "Show authorized functions"
+    echo -e "\n${BOLD}Library Filters:${NC}"
+    printf "  %-18s %s\n" "-mlx" "Ignore MiniLibX internal calls"
+    printf "  %-18s %s\n" "-lm" "Ignore Math library internal calls"
+    echo -e "\n${BOLD}Maintenance:${NC}"
+    printf "  %-18s %s\n" "-up, --update" "Check and install latest version"
+    printf "  %-18s %s\n" "-e, --edit" "Edit authorized list"
+    printf "  %-18s %s\n" "-u, --uninstall" "Remove ForbCheck"
+    exit 0
+}
+
+crop_line() {
+    local func=$1; local code=$2
+    if [ ${#code} -gt 65 ]; then
+        echo "$code" | awk -v f="$func" '{
+            pos = index($0, f);
+            start = (pos > 20) ? pos - 20 : 0;
+            print "..." substr($0, start, 60) "..."
+        }'
+    else
+        echo "$code"
+    fi
+}
+
+run_analysis() {
+    local raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
+    local forbidden_list=""
+    local errors=0
+
+    while read -r func; do
+        [ -z "$func" ] && continue
+        [[ "$func" =~ ^(_|ITM|edata|end|bss_start) ]] && continue
+        [ "$USE_MLX" = true ] && [[ "$func" =~ ^(X|shm|gethostname|puts) ]] && continue
+        [ "$USE_MATH" = true ] && [[ "$func" =~ ^(abs|cos|sin|sqrt|pow|exp|log)f?$ ]] && continue
+        grep -qx "$func" <<< "$MY_DEFINED" && continue
+
+        if grep -qx "$func" <<< "$AUTH_FUNCS"; then
+            [ "$SHOW_ALL" = true ] && printf "  [${GREEN}OK${NC}]        -> %s\n" "$func"
+        else
+            if grep -qE " U ${func}$" <<< "$ALL_UNDEFINED"; then
+                forbidden_list+="${func} "
+                errors=$((errors + 1))
+            fi
+        fi
+    done <<< "$raw_funcs"
+
+    [ -z "$forbidden_list" ] && return 0
+
+    local pattern=$(echo "$forbidden_list" | sed 's/ /|/g; s/|$//')
+    local grep_res
+    if [ -n "$SPECIFIC_FILES" ]; then
+        grep_res=$(grep -HE "\b(${pattern})\b" $SPECIFIC_FILES -n 2>/dev/null | grep -vE "mlx|MLX")
+    else
+        grep_res=$(grep -rHE "\b(${pattern})\b" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")
+    fi
+
+    for f_name in $forbidden_list; do
+        printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
+        local specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
+
+        if [ -n "$specific_locs" ]; then
+            while read -r line; do
+                [ -z "$line" ] && continue
+                local f_path=$(echo "$line" | cut -d: -f1)
+                local l_num=$(echo "$line" | cut -d: -f2)
+                local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
+
+                local display_name=$( [ "$FULL_PATH" = true ] && echo "$f_path" | sed 's|^\./||' || basename "$f_path" )
+
+                if [ -n "$SPECIFIC_FILES" ] || [ "$VERBOSE" = true ]; then
+                    local s_crop=$(crop_line "$f_name" "$snippet")
+                    local pref=$l_num
+                    [ "$VERBOSE" = true ] || [ $(echo "$SPECIFIC_FILES" | wc -w) -gt 1 ] && pref="${display_name}:${l_num}"
+                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${pref}${NC}: ${s_crop}"
+                else
+                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${display_name}:${l_num}${NC}"
+                fi
+            done <<< "$specific_locs"
+        else
+            local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sed 's/\.o//g' | sort -u | tr '\n' ' ')
+            echo -e "          ${YELLOW}↳ Found in: ${BLUE}${files}${NC}"
+        fi
+    done
+    return $errors
+}
+
+# --- MAIN ---
+
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -h|--help)
-            echo -e "${BLUE}ForbCheck v$VERSION${NC}"
-            echo -e " ${GREEN}-v${NC}\tVerbose (Show code context everywhere)\n ${GREEN}-f${NC}\tFilter by files (ex: -f main.c)\n ${GREEN}-r${NC}\tFull paths\n ${GREEN}-up${NC}\tUpdate\n ${GREEN}-a${NC}\tShow authorized\n ${GREEN}-mlx${NC}\tMLX\n ${GREEN}-lm${NC}\tMath\n ${GREEN}-e${NC}\tEdit\n ${GREEN}-u${NC}\tUninstall"
-            exit 0 ;;
+        -h|--help) show_help ;;
         -up|--update)
             echo -e "${YELLOW}Checking for updates...${NC}"
             SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
@@ -60,130 +139,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$TARGET" ]; then echo -e "${RED}✘ Error: No target specified.${NC}"; exit 1; fi
-
-AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | grep -v '^$')
-
-echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
-echo -e "${YELLOW}║          ForbCheck Detector         ║${NC}"
-echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
-echo -e "${BLUE}Target bin :${NC} $TARGET"
-[ -n "$SPECIFIC_FILES" ] && echo -e "${BLUE}Scope      :${NC} Limited to: $SPECIFIC_FILES"
-echo "---------------------------------------"
-
-ALL_UNDEFINED=$(find . -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 nm -A 2>/dev/null | grep " U ")
-MY_DEFINED=$(find . -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 nm 2>/dev/null | grep -E ' [TRD] ' | awk '{print $NF}' | sort -u)
-
-raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
-
-errors=0
-while read -r func; do
-    [ -z "$func" ] && continue
-    [[ "$func" =~ ^(_|ITM|edata|end|bss_start) ]] && continue
-    if [ "$USE_MLX" = true ] && [[ "$func" =~ ^(X|shm|gethostname|puts) ]]; then continue; fi
-    if [ "$USE_MATH" = true ] && [[ "$func" =~ ^(abs|cos|sin|sqrt|pow|exp|log)f?$ ]]; then continue; fi
-    if echo "$MY_DEFINED" | grep -qx "$func"; then continue; fi
-
-    if echo "$AUTH_FUNCS" | grep -qx "$func"; then
-        [ "$SHOW_ALL" = true ] && printf "  [${GREEN}OK${NC}]        -> %s\n" "$func"
-    else
-        matches=$(echo "$ALL_UNDEFINED" | grep -E " U ${func}$")
-        if [ -n "$matches" ]; then
-            search_output=""
-            if [ -n "$SPECIFIC_FILES" ]; then
-                for f in $SPECIFIC_FILES; do
-                    res=$(find . -name "$f" -o -path "*$f*" 2>/dev/null | xargs grep -HE "\b$func\s*\(" -n 2>/dev/null | grep -vE "mlx|MLX")
-                    [ -n "$res" ] && search_output+="$res"$'\n'
-                done
-            else
-                search_output=$(grep -rHE "\b$func\s*\(" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")
-            fi
-
-            if [ -n "$search_output" ]; then
-                printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$func"
-                while read -r line; do
-                    [ -z "$line" ] && continue
-                    file_path=$(echo "$line" | cut -d: -f1)
-                    line_num=$(echo "$line" | cut -d: -f2)
-                    code_snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
-
-                    if [ -n "$SPECIFIC_FILES" ] || [ "$VERBOSE" = true ]; then
-                        # Affichage avec contexte (si -f OU -v)
-                        if [ ${#code_snippet} -gt 65 ]; then
-                            code_snippet=$(echo "$code_snippet" | awk -v f="$func" '{
-                                pos = index($0, f);
-                                start = (pos > 20) ? pos - 20 : 0;
-                                print "..." substr($0, start, 60) "..."
-                            }')
-                        fi
-                        prefix=$( [ "$VERBOSE" = true ] && echo "$(basename "$file_path"):$line_num" || echo "$line_num" )
-                        echo -e "          ${YELLOW}↳ Location: ${BLUE}${prefix}${NC}: ${code_snippet}"
-                    else
-                        # Affichage compact par défaut
-                        fname=$( [ "$FULL_PATH" = true ] && echo "$file_path" | sed 's|^\./||' || basename "$file_path" )
-                        echo -e "          ${YELLOW}↳ Location: ${BLUE}${fname}:${line_num}${NC}"
-                    fi
-                done <<< "$search_output"
-                errors=$((errors + 1))
-            fi
-        fi
-    fi
-done <<< "$raw_funcs"
-
-echo "---------------------------------------"
-if [ $errors -eq 0 ]; then
-    echo -e "${GREEN}✔ RESULT: PERFECT${NC}"
-else
-    [ $errors -gt 1 ] && s="s" || s=""
-    echo -e "${RED}✘ RESULT: FAILURE ($errors call$s found)${NC}"
-    exit 1
-fi
-            echo -e "${YELLOW}Usage:${NC} forb [options] <target>"
-            echo -e "\n${YELLOW}Options:${NC}"
-            echo -e " ${GREEN}-h\t--help${NC}\t\tShow this help\n ${GREEN}-up\t--update${NC}\tUpdate ForbCheck\n ${GREEN}-a${NC}\t\t\tVerbose mode\n ${GREEN}-r\t\t\t${NC}Full paths\n ${GREEN}-mlx\t\t\t${NC}MLX Filter\n ${GREEN}-lm\t\t\t${NC}Math Filter\n ${GREEN}-e\t\t\t${NC}Edit list\n ${GREEN}-u\t\t\t${NC}Uninstall"
-            exit 0 ;;
-        -up|--update)
-            echo -e "${YELLOW}Checking for updates...${NC}"
-            SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
-            remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
-            remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
-            if [ -z "$remote_version" ]; then
-                echo -e "${RED}✘ Error: Could not reach update server.${NC}"
-                echo -e "${YELLOW}Verify your UPDATE_URL in the script.${NC}"; exit 1
-            elif [ "$remote_version" == "$VERSION" ]; then
-                echo -e "${GREEN}[✔] ForbCheck is already up to date (v$VERSION).${NC}"; exit 0
-            fi
-            echo -e "${BLUE}Update found: $VERSION -> $remote_version${NC}"
-            tmp_file=$(mktemp)
-            if echo "$remote_content" > "$tmp_file"; then
-                mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
-                echo -e "${GREEN}[✔] ForbCheck updated to v$remote_version!${NC}"
-            else
-                echo -e "${RED}✘ Error: Download failed.${NC}"; rm -f "$tmp_file"
-            fi
-            exit 0 ;;
-        -r) FULL_PATH=true ;;
-        -e)
-            [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
-            command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE" || nano "$AUTH_FILE"
-            exit 0 ;;
-        -u)
-            sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
-            rm -rf "$INSTALL_DIR"
-            echo -e "${GREEN}[✔] Removed.${NC}"; exit 0 ;;
-        -a) SHOW_ALL=true ;;
-        -mlx) USE_MLX=true ;;
-        -lm) USE_MATH=true ;;
-        -*) echo -e "${RED}Unknown option: $arg${NC}"; exit 1 ;;
-        *) TARGET=$arg ;;
-    esac
-done
-
-if [ -z "$TARGET" ]; then
-    echo -e "${RED}✘ Error: No target specified.${NC}"; exit 1
+if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
+    echo -e "${RED}✘ Error: Target invalid.${NC}" && exit 1
 fi
 
-AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | grep -v '^$')
+START_TIME=$(date +%s.%N)
+AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n')
 
 echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║          ForbCheck Detector         ║${NC}"
@@ -191,52 +152,20 @@ echo -e "${YELLOW}╚═══════════════════�
 echo -e "${BLUE}Target bin :${NC} $TARGET"
 echo "---------------------------------------"
 
-ALL_UNDEFINED=$(find . -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 nm -A 2>/dev/null | grep " U ")
-MY_DEFINED=$(find . -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 nm 2>/dev/null | grep -E ' [TRD] ' | awk '{print $NF}' | sort -u)
+NM_RAW_DATA=$(find . -not -path '*/.*' -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 -P4 nm -A 2>/dev/null)
+ALL_UNDEFINED=$(grep " U " <<< "$NM_RAW_DATA")
+MY_DEFINED=$(grep -E ' [TRD] ' <<< "$NM_RAW_DATA" | awk '{print $NF}' | sort -u)
 
-raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
+run_analysis
+total_errors=$?
 
-errors=0
-while read -r func; do
-    [ -z "$func" ] && continue
-    [[ "$func" =~ ^(_|ITM|edata|end|bss_start) ]] && continue
-    if [ "$USE_MLX" = true ] && [[ "$func" =~ ^(X|shm|gethostname|puts) ]]; then continue; fi
-    if [ "$USE_MATH" = true ] && [[ "$func" =~ ^(abs|cos|sin|sqrt|pow|exp|log)f?$ ]]; then continue; fi
-    if echo "$MY_DEFINED" | grep -qx "$func"; then continue; fi
-
-    if echo "$AUTH_FUNCS" | grep -qx "$func"; then
-        [ "$SHOW_ALL" = true ] && printf "  [${GREEN}OK${NC}]        -> %s\n" "$func"
-    else
-        matches=$(echo "$ALL_UNDEFINED" | grep -E " U ${func}$")
-        if [ -n "$matches" ]; then
-            printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$func"
-            locs=$(grep -rE "\b$func\s*\(" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX" | sed 's|^\./||' | sort -u)
-            if [ -n "$locs" ]; then
-                while read -r line; do
-                    if [ "$FULL_PATH" = false ]; then
-                        display_line="$(basename "$(echo "$line" | cut -d: -f1)"):$(echo "$line" | cut -d: -f2)"
-                    else
-                        display_line=$(echo "$line" | awk -F: '{print $1 ":" $2}')
-                    fi
-                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${display_line}${NC}"
-                done <<< "$locs"
-            else
-                files=$(echo "$matches" | awk -F: '{
-                    sub(/^\.\//, "", $1);
-                    split($1, path, "/"); fname=path[length(path)];
-                    if (fname ~ /\.a$/) print fname "(" $2 ")"; else print fname
-                }' | sed 's/\.o//g' | sort -u)
-                while read -r line; do echo -e "          ${YELLOW}↳ Found in: ${BLUE}${line}${NC}"; done <<< "$files"
-            fi
-            errors=$((errors + 1))
-        fi
-    fi
-done <<< "$raw_funcs"
-
+DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
 echo "---------------------------------------"
-if [ $errors -eq 0 ]; then
-    echo -e "${GREEN}✔ RESULT: PERFECT${NC}"
+if [ $total_errors -eq 0 ]; then
+    echo -ne "${GREEN}✔ RESULT: PERFECT${NC}"
 else
-    echo -e "${RED}✘ RESULT: FAILURE ($errors calls found)${NC}"
-    exit 1
+    [ $total_errors -gt 1 ] && s="s" || s=""
+    echo -ne "${RED}✘ RESULT: FAILURE ($total_errors call$s found)${NC}"
 fi
+printf " [%0.2fs]\n" "$DURATION"
+[ $total_errors -ne 0 ] && exit 1
