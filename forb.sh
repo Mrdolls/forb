@@ -20,7 +20,7 @@ for arg in "$@"; do
             echo -e "${BLUE}ForbCheck v$VERSION${NC}"
             echo -e "${YELLOW}Usage:${NC} forb [options] <target>"
             echo -e "\n${YELLOW}Options:${NC}"
-            echo -e "  ${GREEN}-up${NC}     Update ForbCheck\n  ${GREEN}-a${NC}      Verbose mode\n  ${GREEN}-r${NC}      Full paths\n  ${GREEN}-mlx${NC}    MLX Filter\n  ${GREEN}-lm${NC}     Math Filter\n  ${GREEN}-e${NC}      Edit list\n  ${GREEN}-u${NC}      Uninstall"
+            echo -e " ${GREEN}-h\t--help${NC}\t\tShow this help\n ${GREEN}-up\t--update${NC}\tUpdate ForbCheck\n ${GREEN}-a${NC}\t\t\tVerbose mode\n ${GREEN}-r\t\t\t${NC}Full paths\n ${GREEN}-mlx\t\t\t${NC}MLX Filter\n ${GREEN}-lm\t\t\t${NC}Math Filter\n ${GREEN}-e\t\t\t${NC}Edit list\n ${GREEN}-u\t\t\t${NC}Uninstall"
             exit 0 ;;
         -up)
             echo -e "${YELLOW}[⌛] Checking for updates...${NC}"
