@@ -11,7 +11,7 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 - Detection of forbidden functions in a compiled binary
 - Precise source locations (file and line)
 - Designed for 42 projects (minishell, cub3d, so_long, etc.)
-- Smart Auto-Detection: Automatically detects MiniLibX and applies appropriate filters.
+- __Smart Auto-Detection__: Automatically detects MiniLibX and applies appropriate filters.
 - Library filtering:
   - MiniLibX (`-mlx` or auto-detected): Ignores internal calls like puts, exit, or X11 symbols.
   - Math library (`-lm`): Ignores internal math calls
@@ -179,6 +179,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
