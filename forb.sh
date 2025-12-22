@@ -33,7 +33,7 @@ show_help() {
     printf "  %-18s %s\n" "-t, --time" "Show execution duration"
     printf "  %-18s %s\n" "-up, --update" "Check and install latest version"
     printf "  %-18s %s\n" "-e, --edit" "Edit authorized list"
-    printf "  %-18s %s\n" "-u, --uninstall" "Remove ForbCheck"
+    printf "  %-18s %s\n" "--remove" "Remove ForbCheck"
     exit 0
 }
 
@@ -186,7 +186,7 @@ while [[ $# -gt 0 ]]; do
         -lm) USE_MATH=true; shift ;;
         -e) edit_list ;;
         -t|--time) SHOW_TIME=true; shift ;;
-        -u) uninstall_script ;;
+        --remove) uninstall_script ;;
         -f) shift; SPECIFIC_FILES="$@"; break ;;
         -*) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
         *) TARGET=$1; shift ;;
