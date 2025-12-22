@@ -7,12 +7,12 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="3.6.0"
+VERSION="1.0"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
-SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES=""
+SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES="" ; SHOW_TIME=false
 
 # --- FUNCTIONS ---
 
@@ -30,6 +30,7 @@ show_help() {
     printf "  %-18s %s\n" "-mlx" "Ignore MiniLibX internal calls"
     printf "  %-18s %s\n" "-lm" "Ignore Math library internal calls"
     echo -e "\n${BOLD}Maintenance:${NC}"
+    printf "  %-18s %s\n" "-t, --time" "Show execution duration"
     printf "  %-18s %s\n" "-up, --update" "Check and install latest version"
     printf "  %-18s %s\n" "-e, --edit" "Edit authorized list"
     printf "  %-18s %s\n" "-u, --uninstall" "Remove ForbCheck"
@@ -79,8 +80,8 @@ run_analysis() {
     local raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
     local forbidden_list=""
     local errors=0
-    local single_file_mode=false
 
+    local single_file_mode=false
     if [ -n "$SPECIFIC_FILES" ] && [ $(echo "$SPECIFIC_FILES" | wc -w) -eq 1 ]; then
         single_file_mode=true
     fi
@@ -148,12 +149,13 @@ run_analysis() {
             done <<< "$specific_locs"
 
         elif [ -z "$SPECIFIC_FILES" ]; then
-            printf "  [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
-            local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sed 's/\.o//g' | sort -u | tr '\n' ' ')
-            echo -e "          ${YELLOW}↳ Found in: ${BLUE}${files}${NC}"
+            printf "  [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
+
+            local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
+
+            echo -e "          ${YELLOW}↳ Found in objects: ${BLUE}${files}${NC}${CYAN}(recompile for silence)${NC}"
         fi
     done
-
     return $errors
 }
 
@@ -169,6 +171,7 @@ while [[ $# -gt 0 ]]; do
         -mlx) USE_MLX=true; shift ;;
         -lm) USE_MATH=true; shift ;;
         -e) edit_list ;;
+        -t|--time) SHOW_TIME=true; shift ;;
         -u) uninstall_script ;;
         -f) shift; SPECIFIC_FILES="$@"; break ;;
         -*) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
@@ -200,11 +203,17 @@ total_errors=$?
 DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
 echo "---------------------------------------"
 if [ $total_errors -eq 0 ]; then
-    echo -ne "${GREEN}RESULT: PERFECT${NC}"
+    echo -ne "${GREEN}RESULT: PERFECT"
 else
     [ $total_errors -gt 1 ] && s="s" || s=""
-    echo -ne "${RED}RESULT: FAILURE ($total_errors call$s found)${NC}"
+    echo -ne "${RED}RESULT: FAILURE"
 fi
-printf " [%0.2fs]\n" "$DURATION"
+
+if [ "$SHOW_TIME" = true ]; then
+    DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
+    printf " (%0.2fs)" "$DURATION"
+fi
+
+echo -e "${NC}"
 
 [ $total_errors -ne 0 ] && exit 1
