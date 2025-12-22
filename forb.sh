@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.0"
+VERSION="1.1"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
