@@ -62,12 +62,13 @@ forb [options] <target> [-f <files...>]
 | `-r`, `--relative` | Show full relative paths |
 | `-a`, `--all` | Show authorized functions |
 | `-t`, `--time` | Show execution duration |
+| `--no-auto` | Disable automatic library detection |
 
 ### Library Filters
 
 | Option | Description |
 |------|-------------|
-| `-mlx` | Ignore MiniLibX internal calls |
+| `-mlx` | Force ignore MiniLibX internal calls |
 | `-lm` | Ignore Math library internal calls |
 
 ### Maintenance
@@ -177,4 +178,5 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
