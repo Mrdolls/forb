@@ -163,7 +163,7 @@ run_analysis() {
             done <<< "$specific_locs"
 
         elif [ -z "$SPECIFIC_FILES" ]; then
-            printf "  [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
+            printf "   [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
 
             local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
 
