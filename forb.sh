@@ -60,7 +60,21 @@ edit_list() {
 }
 
 uninstall_script() {
-    sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null; rm -rf "$INSTALL_DIR"; exit 0
+    echo -ne "${RED}${BOLD}Warning: You are about to uninstall ForbCheck. All configurations will be lost. Continue? (y/n): ${NC}"
+    read -r choice
+    case "$choice" in
+        [yY][eE][sS]|[yY])
+            echo -e "${YELLOW}Uninstalling ForbCheck...${NC}"
+            sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
+            rm -rf "$INSTALL_DIR"
+            echo -e "${GREEN}[✔] ForbCheck has been successfully removed.${NC}"
+            exit 0
+            ;;
+        *)
+            echo -e "${BLUE}Uninstallation aborted.${NC}"
+            exit 0
+            ;;
+    esac
 }
 
 crop_line() {
