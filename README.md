@@ -13,8 +13,8 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 - Designed for 42 projects (minishell, cub3d, so_long, etc.)
 - Smart Auto-Detection: Automatically detects MiniLibX and applies appropriate filters.
 - Library filtering:
-  - MiniLibX (-mlx or auto-detected): Ignores internal calls like puts, exit, or X11 symbols.
-  - Math library (-lm): Ignores internal math calls
+  - MiniLibX (`-mlx` or auto-detected): Ignores internal calls like puts, exit, or X11 symbols.
+  - Math library (`-lm`): Ignores internal math calls
 - Customizable authorized functions list
 - Context-aware colored output (automatically disabled when redirected)
 - Proper exit codes (scriptable / CI-friendly)
@@ -179,6 +179,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
