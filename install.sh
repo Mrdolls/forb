@@ -1,6 +1,7 @@
 #!/bin/bash
 
-REPO_URL="https://github.com/Mrdolls/forb.git"
+# Utilisation du protocole SSH pour l'accès privé
+REPO_URL="git@github.com:Mrdolls/forb.git"
 INSTALL_DIR="$HOME/.forb"
 TPL_DIR="$INSTALL_DIR/templates"
 COMPLETION_FILE="$INSTALL_DIR/forb_completion.sh"
@@ -17,25 +18,35 @@ version_to_int() {
 
 main() {
     clear
-    echo -e "${C_BLUE}Welcome to the ForbCheck installer!${C_RESET}"
+    echo -e "${C_BLUE}Welcome to the ForbCheck installer (Private SSH Mode)!${C_RESET}"
 
     if [ -d "$INSTALL_DIR" ]; then
         cd "$INSTALL_DIR" || exit 1
+        
+        # Test de connexion SSH avant de tenter quoi que ce soit
         git fetch origin main > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            echo -e "${C_RED}Error: Cannot reach GitHub via SSH. Check your SSH keys.${C_RESET}"
+            exit 1
+        fi
         
         LOCAL_V=$(grep "^VERSION=" forb.sh | cut -d'"' -f2)
         REMOTE_V=$(git show origin/main:forb.sh | grep "^VERSION=" | cut -d'"' -f2)
 
         if [ $(version_to_int "$REMOTE_V") -gt $(version_to_int "$LOCAL_V") ]; then
-            echo -e "${C_YELLOW}New version found ($REMOTE_V). Updating from $LOCAL_V...${C_RESET}"
+            echo -e "${C_YELLOW}New version found ($REMOTE_V). Updating...${C_RESET}"
             git reset --hard origin/main > /dev/null 2>&1
             echo -e "${C_GREEN}✔ ForbCheck updated successfully.${C_RESET}"
         else
             echo -e "${C_GREEN}✔ ForbCheck is already up to date ($LOCAL_V).${C_RESET}"
         fi
     else
-        echo -e "Cloning ForbCheck..."
+        echo -e "Cloning ForbCheck via SSH..."
         git clone "$REPO_URL" "$INSTALL_DIR" > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            echo -e "${C_RED}Error: Failed to clone. Make sure your SSH key is added to GitHub.${C_RESET}"
+            exit 1
+        fi
         echo -e "${C_GREEN}✔ ForbCheck installed in $INSTALL_DIR.${C_RESET}"
     fi
 
@@ -61,7 +72,13 @@ EOF
         echo -e "\n# Alias for ForbCheck" >> "$SHELL_CONFIG"
         echo "$ALIAS_CMD" >> "$SHELL_CONFIG"
     else
-        sed -i "/alias forb=/c\\$ALIAS_CMD" "$SHELL_CONFIG"
+        # Correction pour sed sur macOS (BSD sed vs GNU sed)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "/alias forb=/c\\
+$ALIAS_CMD" "$SHELL_CONFIG"
+        else
+            sed -i "/alias forb=/c\\$ALIAS_CMD" "$SHELL_CONFIG"
+        fi
     fi
 
     cat << 'EOF' > "$COMPLETION_FILE"
@@ -95,7 +112,6 @@ EOF
             echo "autoload -U +X bashcompinit && bashcompinit" >> "$SHELL_CONFIG"
         fi
         echo "source $COMPLETION_FILE" >> "$SHELL_CONFIG"
-        echo -e "${C_GREEN}✔ Auto-completion added to $SHELL_CONFIG.${C_RESET}"
     fi
 
     echo -e "\n${C_GREEN}All done!${C_RESET}"
