@@ -49,12 +49,12 @@ update_script() {
     if [ -z "$remote_content" ]; then echo -e "${RED}✘ Error: Could not reach update server.${NC}"; exit 1; fi
     remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
     if [ "$remote_version" == "$VERSION" ]; then
-        echo -e "${GREEN}[✔] Already up to date (v$VERSION).${NC}"
+        echo -e "${GREEN}Already up to date (v$VERSION).${NC}"
     else
         echo -e "${BLUE}Updating to v$remote_version...${NC}"
         tmp_file=$(mktemp); echo "$remote_content" > "$tmp_file"
         mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
-        echo -e "${GREEN}[✔] Updated successfully!${NC}"
+        echo -e "${GREEN}Updated successfully!${NC}"
     fi
     exit 0
 }
@@ -107,8 +107,6 @@ auto_detect_libraries() {
 }
 
 run_analysis() {
-
-
     local raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
     local forbidden_list=""
     local errors=0
@@ -134,8 +132,6 @@ run_analysis() {
             fi
         fi
     done <<< "$raw_funcs"
-
-    [ -z "$forbidden_list" ] && return 0
     local pattern=$(echo "$forbidden_list" | sed 's/ /|/g; s/|$//')
     local regex_pattern="\b(${pattern})\b"
     local grep_res
@@ -177,13 +173,16 @@ run_analysis() {
             local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
             echo -ne "          ${YELLOW}↳ Found in objects: ${BLUE}${files}${NC}"
 
-            if [[ "$f_name" =~ ^(strlen|memset|memcpy|printf|puts)$ ]]; then
-                echo -e " ${CYAN}(GCC Built-in or macro? Use -fno-builtin)${NC}"
+            if [[ "$f_name" =~ ^(strlen|memset|memcpy|printf|puts|putchar)$ ]]; then
+                echo -e " ${CYAN}(Use -fno-builtin in your gcc flags to silence this)${NC}"
             else
                 echo -e " ${CYAN}(Recompile to sync binary)${NC}"
             fi
         fi
     done
+    if [ $errors -eq 0 ] && [ "$forbidden_list" = "" ]; then
+        echo -e "\t${GREEN}No forbidden functions detected.${NC}"
+    fi
     return $errors
 }
 
@@ -211,7 +210,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-    echo -e "${RED}✘ Error: Target invalid.${NC}" && exit 1
+    echo -e "${RED}Error: Target invalid.${NC}" && exit 1
+fi
+
+if ! nm "$TARGET" &>/dev/null; then
+    echo -e "${RED}Error: $TARGET is not a valid binary or object file.${NC}"
+    exit 1
 fi
 
 START_TIME=$(date +%s.%N)
@@ -226,7 +230,7 @@ if [ "$detected" = true ]; then
     echo -e "${CYAN}MiniLibX detected (Use --no-auto to scan everything)${NC}"
 fi
 [ -n "$SPECIFIC_FILES" ] && echo -e "${BLUE}Scope      :${NC} $SPECIFIC_FILES"
-echo "---------------------------------------"
+echo "-------------------------------------------------"
 
 NM_RAW_DATA=$(find . -not -path '*/.*' -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 -P4 nm -A 2>/dev/null)
 ALL_UNDEFINED=$(grep " U " <<< "$NM_RAW_DATA")
@@ -236,12 +240,12 @@ run_analysis
 total_errors=$?
 
 DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
-echo "---------------------------------------"
+echo "-------------------------------------------------"
 if [ $total_errors -eq 0 ]; then
-    echo -ne "${GREEN}RESULT: PERFECT"
+    echo -ne "\t\t${GREEN}RESULT: PERFECT"
 else
     [ $total_errors -gt 1 ] && s="s" || s=""
-    echo -ne "${RED}RESULT: FAILURE"
+    echo -ne "\t\t${RED}RESULT: FAILURE"
 fi
 
 if [ "$SHOW_TIME" = true ]; then
