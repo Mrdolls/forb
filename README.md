@@ -6,7 +6,7 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 
 ---
 
-## What's New in v1.5!
+## What's New in v1.5.1!
 
 ### Smart Sync Detection
 - Desync Warning: If you modify your .c files but forget to recompile (make), ForbCheck will warn you that the results might be outdated.
@@ -188,6 +188,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
