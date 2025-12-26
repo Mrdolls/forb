@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.5"
+VERSION="1.5.1"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -46,6 +46,10 @@ show_help() {
     exit 0
 }
 
+version_to_int() {
+    echo "$1" | sed 's/v//' | awk -F. '{ printf("%d%03d%03d\n", $1,$2,$3); }'
+}
+
 update_script() {
     echo -e "${C_BLUE}Checking for updates...${C_RESET}"
     local raw_url="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -66,6 +70,7 @@ update_script() {
         echo -e "${C_RED}Error: Failed to download update from GitHub.${C_RESET}"
         return 1
     fi
+    exit 0
 }
 
 edit_list() {
