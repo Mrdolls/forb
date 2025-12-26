@@ -62,7 +62,6 @@ forb [options] <target> [-f <files...>]
 | `-f <files...>` | Limit analysis to specific files |
 | `-p`, `--full-path` | Show full paths |
 | `-a`, `--all` | Show authorized functions during scan |
-| `-t`, `--time` | Show execution duration |
 | `--no-auto` | Disable automatic library detection |
 
 ### Library Filters
@@ -76,6 +75,7 @@ forb [options] <target> [-f <files...>]
 
 | Option | Description |
 |------|-------------|
+| `-t`, `--time` | Show execution duration |
 | `-up`, `--update` | Update ForbCheck |
 | `-e`, `--edit` | Edit authorized functions list |
 | `-l`, `--list` `[<funcs...>]` | Show list or check specific functions |
@@ -180,6 +180,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
