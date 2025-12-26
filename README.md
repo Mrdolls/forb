@@ -60,8 +60,8 @@ forb [options] <target> [-f <files...>]
 | `-h`, `--help` | Display help message |
 | `-v`, `--verbose` | Show source code context |
 | `-f <files...>` | Limit analysis to specific files |
-| `-r`, `--relative` | Show full relative paths |
-| `-a`, `--all` | Show authorized functions |
+| `-p`, `--full-path` | Show full paths |
+| `-a`, `--all` | Show authorized functions during scan |
 | `-t`, `--time` | Show execution duration |
 | `--no-auto` | Disable automatic library detection |
 
@@ -70,7 +70,7 @@ forb [options] <target> [-f <files...>]
 | Option | Description |
 |------|-------------|
 | `-mlx` | Force ignore MiniLibX internal calls |
-| `-lm` | Ignore Math library internal calls |
+| `-lm` | Force Ignore Math library internal calls |
 
 ### Maintenance
 
@@ -78,6 +78,7 @@ forb [options] <target> [-f <files...>]
 |------|-------------|
 | `-up`, `--update` | Update ForbCheck |
 | `-e`, `--edit` | Edit authorized functions list |
+| `-l`, `--list` `[<funcs...>]` | Show list or check specific functions |
 | `--remove` | Uninstall ForbCheck |
 
 ---
@@ -179,6 +180,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
