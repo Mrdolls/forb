@@ -51,23 +51,23 @@ version_to_int() {
 }
 
 update_script() {
-    echo -e "${C_BLUE}Checking for updates...${C_RESET}"
+    echo -e "${C_BLUE}Checking for updates...${RC}"
     local raw_url="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
     local tmp_file="/tmp/forb_update.sh"
     if curl -sL "$raw_url" -o "$tmp_file"; then
         local remote_version=$(grep "^VERSION=" "$tmp_file" | cut -d'"' -f2)
         if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
-            echo -e "${C_YELLOW}New version found: $remote_version. Updating...${C_RESET}"
+            echo -e "${YELLOW}New version found: $remote_version. Updating...${RC}"
             mv "$tmp_file" "$0"
             chmod +x "$0"
-            echo -e "${C_GREEN}✔ ForbCheck has been updated to $remote_version!${C_RESET}"
+            echo -e "${GREEN}ForbCheck has been updated to $remote_version!${RC}"
             exit 0
         else
-            echo -e "${C_GREEN}✔ ForbCheck is already up to date ($VERSION).${C_RESET}"
+            echo -e "${GREEN}ForbCheck is already up to date ($VERSION).${RC}"
             rm -f "$tmp_file"
         fi
     else
-        echo -e "${C_RED}Error: Failed to download update from GitHub.${C_RESET}"
+        echo -e "${RED}Error: Failed to download update from GitHub.${RC}"
         return 1
     fi
     exit 0
