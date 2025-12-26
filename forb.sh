@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.4"
+VERSION="1.5"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -21,25 +21,28 @@ show_help() {
     echo -e "Usage: forb [options] <target> [-f <files...>]\n"
 
     echo -e "${BOLD}Arguments:${NC}"
-    printf "  %-18s %s\n" "<target>" "Executable or library to analyze"
+    printf "  %-24s %s\n" "<target>" "Executable or library to analyze"
+
+    echo -e "\n${BOLD}General:${NC}"
+    printf "  %-24s %s\n" "-h, --help" "Show help message"
+    printf "  %-24s %s\n" "-l, --list [<funcs...>]" "Show list or check specific functions"
+    printf "  %-24s %s\n" "-e, --edit" "Edit authorized list"
 
     echo -e "\n${BOLD}Scan Options:${NC}"
-    printf "  %-18s %s\n" "-v, --verbose" "Show source code context"
-    printf "  %-18s %s\n" "-f <files...>" "Limit scan to specific files"
-    printf "  %-18s %s\n" "-p, --full-path" "Show full paths"
-    printf "  %-18s %s\n" "-a, --all" "Show authorized functions during scan"
-    printf "  %-18s %s\n" "--no-auto" "Disable automatic library detection"
+    printf "  %-24s %s\n" "-v, --verbose" "Show source code context"
+    printf "  %-24s %s\n" "<target> -f <files...>" "Limit scan to specific files"
+    printf "  %-24s %s\n" "-p, --full-path" "Show full paths"
+    printf "  %-24s %s\n" "-a, --all" "Show authorized functions during scan"
+    printf "  %-24s %s\n" "--no-auto" "Disable automatic library detection"
 
     echo -e "\n${BOLD}Library Filters:${NC}"
-    printf "  %-18s %s\n" "-mlx" "Ignore MiniLibX internal calls"
-    printf "  %-18s %s\n" "-lm" "Ignore Math library internal calls"
+    printf "  %-24s %s\n" "-mlx" "Ignore MiniLibX internal calls"
+    printf "  %-24s %s\n" "-lm" "Ignore Math library internal calls"
 
     echo -e "\n${BOLD}Maintenance:${NC}"
-    printf "  %-18s %s\n" "-t, --time" "Show execution duration"
-    printf "  %-18s %s\n" "-up, --update" "Check and install latest version"
-    printf "  %-18s %s\n" "-e, --edit" "Edit authorized list"
-    printf "  %-18s %s\n" "-l [<funcs...>]" "Show list or check specific functions"
-    printf "  %-18s %s\n" "--remove" "Remove ForbCheck"
+    printf "  %-24s %s\n" "-t, --time" "Show execution duration"
+    printf "  %-24s %s\n" "-up, --update" "Check and install latest version"
+    printf "  %-24s %s\n" "--remove" "Remove ForbCheck"
     exit 0
 }
 
