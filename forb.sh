@@ -47,20 +47,25 @@ show_help() {
 }
 
 update_script() {
-    echo -e "${YELLOW}Checking for updates...${NC}"
-    SCRIPT_PATH=$(readlink -f "$0" 2>/dev/null || realpath "$0" 2>/dev/null || echo "$0")
-    remote_content=$(curl -sL --connect-timeout 5 "$UPDATE_URL")
-    if [ -z "$remote_content" ]; then echo -e "${RED}✘ Error: Could not reach update server.${NC}"; exit 1; fi
-    remote_version=$(echo "$remote_content" | grep -m1 "VERSION=" | cut -d'"' -f2)
-    if [ "$remote_version" == "$VERSION" ]; then
-        echo -e "${GREEN}Already up to date (v$VERSION).${NC}"
+    echo -e "${C_BLUE}Checking for updates...${C_RESET}"
+    local raw_url="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
+    local tmp_file="/tmp/forb_update.sh"
+    if curl -sL "$raw_url" -o "$tmp_file"; then
+        local remote_version=$(grep "^VERSION=" "$tmp_file" | cut -d'"' -f2)
+        if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
+            echo -e "${C_YELLOW}New version found: $remote_version. Updating...${C_RESET}"
+            mv "$tmp_file" "$0"
+            chmod +x "$0"
+            echo -e "${C_GREEN}✔ ForbCheck has been updated to $remote_version!${C_RESET}"
+            exit 0
+        else
+            echo -e "${C_GREEN}✔ ForbCheck is already up to date ($VERSION).${C_RESET}"
+            rm -f "$tmp_file"
+        fi
     else
-        echo -e "${BLUE}Updating to v$remote_version...${NC}"
-        tmp_file=$(mktemp); echo "$remote_content" > "$tmp_file"
-        mv "$tmp_file" "$SCRIPT_PATH" && chmod +x "$SCRIPT_PATH"
-        echo -e "${GREEN}Updated successfully!${NC}"
+        echo -e "${C_RED}Error: Failed to download update from GitHub.${C_RESET}"
+        return 1
     fi
-    exit 0
 }
 
 edit_list() {
