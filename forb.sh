@@ -26,8 +26,8 @@ show_help() {
     echo -e "\n${BOLD}Scan Options:${NC}"
     printf "  %-18s %s\n" "-v, --verbose" "Show source code context"
     printf "  %-18s %s\n" "-f <files...>" "Limit scan to specific files"
-    printf "  %-18s %s\n" "-r, --relative" "Show full relative paths"
-    printf "  %-18s %s\n" "-a, --all" "Show authorized functions"
+    printf "  %-18s %s\n" "-p, --full-path" "Show full paths"
+    printf "  %-18s %s\n" "-a, --all" "Show authorized functions during scan"
     printf "  %-18s %s\n" "--no-auto" "Disable automatic library detection"
 
     echo -e "\n${BOLD}Library Filters:${NC}"
@@ -38,6 +38,7 @@ show_help() {
     printf "  %-18s %s\n" "-t, --time" "Show execution duration"
     printf "  %-18s %s\n" "-up, --update" "Check and install latest version"
     printf "  %-18s %s\n" "-e, --edit" "Edit authorized list"
+    printf "  %-18s %s\n" "-l [<funcs...>]" "Show list or check specific functions"
     printf "  %-18s %s\n" "--remove" "Remove ForbCheck"
     exit 0
 }
@@ -104,6 +105,32 @@ auto_detect_libraries() {
         USE_MLX=true
         detected=true
     fi
+}
+
+show_list() {
+    if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
+        echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
+        exit 0
+    fi
+    if [ $# -gt 0 ]; then
+        echo -e "${BLUE}${BOLD}Checking functions:${NC}"
+        for f in "$@"; do
+            if grep -qx "$f" <<< "$AUTH_FUNCS"; then
+                echo -e "   [${GREEN}OK${NC}] -> $f"
+            else
+                echo -e "   [${RED}KO${NC}] -> $f"
+            fi
+        done
+    else
+        if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
+            echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
+        else
+            echo -e "${BLUE}${BOLD}Authorized functions:${NC} ${CYAN}(Use -e to edit)${NC}"
+            echo "---------------------------------------"
+            tr ',' '\n' < "$AUTH_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | column -c 80
+        fi
+    fi
+    exit 0
 }
 
 run_analysis() {
@@ -195,11 +222,20 @@ while [[ $# -gt 0 ]]; do
         -h|--help) show_help ;;
         -up|--update) update_script ;;
         -v) VERBOSE=true; shift ;;
-        -r) FULL_PATH=true; shift ;;
+        -p|--full-path) FULL_PATH=true; shift ;;
         -a) SHOW_ALL=true; shift ;;
         -mlx) USE_MLX=true; shift ;;
         -lm) USE_MATH=true; shift ;;
         -e) edit_list ;;
+        -l|--list)
+            shift
+            check_args=""
+            while [[ $# -gt 0 && ! $1 =~ ^- ]]; do
+                check_args+="$1 "
+                shift
+            done
+            AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            show_list $check_args ;;
         -t|--time) SHOW_TIME=true; shift ;;
         --remove) uninstall_script ;;
         --no-auto) DISABLE_AUTO=true; shift ;;
@@ -209,6 +245,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+SET_WARNING=false
+
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
     echo -e "${RED}Error: Target invalid.${NC}" && exit 1
 fi
@@ -216,6 +254,32 @@ fi
 if ! nm "$TARGET" &>/dev/null; then
     echo -e "${RED}Error: $TARGET is not a valid binary or object file.${NC}"
     exit 1
+fi
+
+if [ -f "$TARGET" ]; then
+    current_src_data=$(find . -name "*.c" -not -path '*/.*' -type f -exec stat -c "%s" {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+    current_src_lines=$(find . -name "*.c" -not -path '*/.*' -type f -exec wc -l {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+    bin_mtime=$(stat -c %Y "$TARGET" 2>/dev/null)
+    target_name=$(basename "$TARGET")
+     cache_file="$INSTALL_DIR/.forb_cache"
+    ref_data=$(grep "^$target_name:" "$cache_file" 2>/dev/null)
+    ref_lines=$(echo "$ref_data" | cut -d: -f2)
+    ref_size=$(echo "$ref_data" | cut -d: -f3)
+    ref_bin_date=$(echo "$ref_data" | cut -d: -f4)
+    if [[ "$bin_mtime" != "$ref_bin_date" ]]; then
+        sed -i "/^$target_name:/d" "$cache_file" 2>/dev/null
+        echo "$target_name:$current_src_lines:$current_src_data:$bin_mtime" >> "$cache_file"
+        SET_WARNING=false
+    else
+        diff_size=$((current_src_data - ref_size))
+        abs_diff=${diff_size#-}
+
+        if [[ "$current_src_lines" != "$ref_lines" ]] || [[ "$abs_diff" -gt 2 ]]; then
+            SET_WARNING=true
+        else
+            SET_WARNING=false
+        fi
+    fi
 fi
 
 START_TIME=$(date +%s.%N)
@@ -228,6 +292,11 @@ echo -e "${BLUE}Target bin :${NC} $TARGET"
 auto_detect_libraries
 if [ "$detected" = true ]; then
     echo -e "${CYAN}MiniLibX detected (Use --no-auto to scan everything)${NC}"
+fi
+if [ "$SET_WARNING" = true ]; then
+        echo -e "${YELLOW}Warning:${NC} Source content is newer than the binary."
+        echo -e "         The results might not reflect your latest changes."
+        echo -e "         Consider ${GREEN}recompiling${NC} to be sure."
 fi
 [ -n "$SPECIFIC_FILES" ] && echo -e "${BLUE}Scope      :${NC} $SPECIFIC_FILES"
 echo "-------------------------------------------------"
