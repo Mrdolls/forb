@@ -155,6 +155,12 @@ malloc
 free
 ```
 
+or
+
+```text
+read, write, malloc, free
+```
+
 ---
 
 ## Exit Codes
@@ -188,6 +194,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
