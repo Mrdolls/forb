@@ -135,7 +135,7 @@ forb -v minishell
 Authorized functions are defined in:
 
 ```text
-~/.forb/authorize.txt
+$HOME/.forb/authorize.txt
 ```
 
 Functions may be separated by new lines, spaces, or commas.
@@ -188,6 +188,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
