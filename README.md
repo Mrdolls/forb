@@ -53,11 +53,17 @@ forb [options] <target> [-f <files...>]
 
 ## Options
 
+### General
+| Option | Description |
+|------|-------------|
+| `-h`, `--help` | Display help message |
+| `-l`, `--list` `[<funcs...>]` | Show list or check specific functions |
+| `-e`, `--edit` | Edit authorized functions list |
+
 ### Scan Options
 
 | Option | Description |
 |------|-------------|
-| `-h`, `--help` | Display help message |
 | `-v`, `--verbose` | Show source code context |
 | `-f <files...>` | Limit analysis to specific files |
 | `-p`, `--full-path` | Show full paths |
@@ -77,8 +83,6 @@ forb [options] <target> [-f <files...>]
 |------|-------------|
 | `-t`, `--time` | Show execution duration |
 | `-up`, `--update` | Update ForbCheck |
-| `-e`, `--edit` | Edit authorized functions list |
-| `-l`, `--list` `[<funcs...>]` | Show list or check specific functions |
 | `--remove` | Uninstall ForbCheck |
 
 ---
@@ -180,6 +184,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
