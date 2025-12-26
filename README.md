@@ -6,21 +6,26 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 
 ---
 
-## Features
+## What's New in v1.5!
 
-- Detection of forbidden functions in a compiled binary
-- Precise source locations (file and line)
-- Designed for 42 projects (minishell, cub3d, so_long, etc.)
-- __Smart Auto-Detection__: Automatically detects MiniLibX and applies appropriate filters.
-- Library filtering:
-  - MiniLibX (`-mlx` or auto-detected): Ignores internal calls like puts, exit, or X11 symbols.
-  - Math library (`-lm`): Ignores internal math calls
-- Customizable authorized functions list
-- Context-aware colored output (automatically disabled when redirected)
-- Proper exit codes (scriptable / CI-friendly)
-- Standalone Bash tool with standard Unix utilities
-  
----
+### Smart Sync Detection
+- Desync Warning: If you modify your .c files but forget to recompile (make), ForbCheck will warn you that the results might be outdated.
+
+- Intelligent Cache: It tracks the "state" of your project (line count and file size).
+
+- Undo-Friendly: If you modify a file and then undo your changes (Ctrl+Z), the warning disappears automatically—no false positives for simple formatting or accidental saves.
+
+### Enhanced CLI Experience
+- Reorganized Help: A cleaner `--help` menu for better readability during intense coding sessions.
+
+- Hybrid List Command: Use `-l` to view all authorized functions, or `forb -l <func>` to quickly check specific ones.
+
+- Global Awareness: The script now recognizes when you switch between different projects (e.g., from `minishell` to `cub3d`) and updates its internal reference accordingly.
+
+### Performance & Accuracy
+- Blazing Fast: Under 0.2s for most projects (benchmarked on mid-to-high-end hardware).
+
+- Optimized: Even on standard school lab machines, the overhead remains negligible, ensuring your workflow is never interrupted.
 
 ## Requirements
 
@@ -92,19 +97,19 @@ forb [options] <target> [-f <files...>]
 ### Basic analysis:
 
 ```bash
-forb minishell
+forb minishell (no forbidden fonctions)
 ```
 
-<img width="353" height="199" alt="image" src="https://github.com/user-attachments/assets/f18cb25d-5eee-4cf5-b5ed-6e8db68fd0ff" />
+<img width="405" height="173" alt="image" src="https://github.com/user-attachments/assets/0ee6b142-d969-4ca9-8f46-d16e9d606420" />
 
 
 ### Show execution time:
 
 ```bash
-forb -t minishell
+forb -t minishell (with forbidden fonctions)
 ```
 
-<img width="376" height="200" alt="image" src="https://github.com/user-attachments/assets/256d012b-c6bb-4554-a6fc-b0bc528c935e" />
+<img width="418" height="187" alt="image" src="https://github.com/user-attachments/assets/a7c3bdcb-6469-4232-94f4-30fbfeeb50e8" />
 
 
 ### Limit analysis to specific files:
@@ -113,7 +118,7 @@ forb -t minishell
 forb minishell -f heredoc_utils.c
 ```
 
-<img width="506" height="202" alt="image" src="https://github.com/user-attachments/assets/b1a8d004-ada1-41c5-80ec-a956f5188e3b" />
+<img width="538" height="202" alt="image" src="https://github.com/user-attachments/assets/7ae6c24a-7452-45ee-aaaf-00f5ffdfcda4" />
 
 
 ### Verbose mode:
@@ -121,8 +126,7 @@ forb minishell -f heredoc_utils.c
 ```bash
 forb -v minishell
 ```
-
-<img width="541" height="206" alt="image" src="https://github.com/user-attachments/assets/03272465-6a3c-4402-b6bb-8065a377b215" />
+<img width="545" height="196" alt="image" src="https://github.com/user-attachments/assets/81af8b99-552e-47d7-92e0-83916e4a9bec" />
 
 ---
 
@@ -184,6 +188,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
