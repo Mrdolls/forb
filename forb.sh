@@ -57,7 +57,7 @@ update_script() {
     if curl -sL "$raw_url" -o "$tmp_file"; then
         local remote_version=$(grep "^VERSION=" "$tmp_file" | cut -d'"' -f2)
         if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
-            echo -e "${YELLOW}New version found: $remote_version. Updating...${RC}"
+            echo -e "${YELLOW}New version found: $remote_version Updating...${RC}"
             mv "$tmp_file" "$0"
             chmod +x "$0"
             echo -e "${GREEN}ForbCheck has been updated to $remote_version!${RC}"
