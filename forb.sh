@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.5.1"
+VERSION="1.6"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -226,9 +226,23 @@ run_analysis() {
     return $errors
 }
 
-
-
 # --- MAIN ---
+
+args=()
+for arg in "$@"; do
+    if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" ]]; then
+        args+=("$arg")
+    elif [[ "$arg" == "--"* ]]; then
+        args+=("$arg")
+    elif [[ "$arg" =~ ^-[a-zA-Z]{2,}$ ]]; then
+        for (( i=1; i<${#arg}; i++ )); do
+            args+=("-${arg:$i:1}")
+        done
+    else
+        args+=("$arg")
+    fi
+done
+set -- "${args[@]}"
 
 while [[ $# -gt 0 ]]; do
     case $1 in
