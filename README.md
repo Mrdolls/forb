@@ -6,24 +6,29 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 
 ---
 
-## What's New in v1.5.1!
+## Key Features
 
-### Smart Sync Detection
-- Desync Warning: If you modify your .c files but forget to recompile (make), ForbCheck will warn you that the results might be outdated.
+* **Deep Analysis:** Uses `nm` and object file scanning (`.o`) to distinguish between undefined symbols and your own internal functions. No more false positives from your own utils.
+* **Smart Context Awareness:** Automatically detects external libraries like **MiniLibX** (`-mlx`) or **Math** (`-lm`) to avoid flagging allowed external calls.
+* **Blazing Fast:** Optimized parallel scanning (`xargs -P4`). Runs in under **0.2s** on most projects.
+* **Stale Binary Detection:** Smartly compares source code timestamps with your binary. If you forgot to `make re`, ForbCheck warns you that results might be outdated.
+* **Precision Locator:** Pinpoints exactly where the forbidden function is called (file and line number).
 
-- Intelligent Cache: It tracks the "state" of your project (line count and file size).
+---
 
-- Undo-Friendly: If you modify a file and then undo your changes (Ctrl+Z), the warning disappears automatically—no false positives for simple formatting or accidental saves.
+## 🆕 What's New in v1.6.1
+
+### Smarter False-Positive Filtering
+* **Comment Ignoring:** ForbCheck is now smart enough to ignore forbidden keywords found in comments (e.g., `// TODO: remove printf`). It only flags code that actually compiles!
+
+### Smart Sync & Cache
+* **Desync Warning:** Modified your `.c` files but forgot to recompile? The tool now alerts you immediately to prevent testing against an old binary.
+* **Undo-Friendly:** The intelligent cache tracks line counts and file sizes. If you undo changes (Ctrl+Z), the warning resolves itself automatically.
 
 ### Enhanced CLI Experience
-- Reorganized Help: A cleaner `--help` menu for better readability during intense coding sessions.
-
-- Hybrid List Command: Use `-l` to view all authorized functions, or `forb -l <func>` to quickly check specific ones.
-
-- Global Awareness: The script now recognizes when you switch between different projects (e.g., from `minishell` to `cub3d`) and updates its internal reference accordingly.
-
-### Performance & Accuracy
-- Blazing Fast: Under 0.2s for most projects (benchmarked on mid-to-high-end hardware).
+* **Hybrid List Command:** Use `-l` to view all authorized functions, or `forb -l <func>` to quickly check the status of a specific one.
+* **Global Awareness:** Seamlessly switch between projects (e.g., `minishell` -> `cub3d`). The tool updates its internal reference context instantly.
+* **Cleaner Help:** A reorganized `--help` menu for better readability during those late-night coding sessions.
 
 - Optimized: Even on standard school lab machines, the overhead remains negligible, ensuring your workflow is never interrupted.
 
@@ -194,6 +199,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
