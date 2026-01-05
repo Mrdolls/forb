@@ -109,7 +109,7 @@ forb minishell (no forbidden fonctions)
 forb -t minishell (with forbidden fonctions)
 ```
 
-<img width="418" height="187" alt="image" src="https://github.com/user-attachments/assets/a7c3bdcb-6469-4232-94f4-30fbfeeb50e8" />
+<img width="532" height="320" alt="image" src="https://github.com/user-attachments/assets/383a258a-ce57-4c07-98f8-2e5d0cc2eac3" />
 
 
 ### Limit analysis to specific files:
@@ -194,6 +194,7 @@ Open-source project intended for educational use.
 ## Author
 
 Mrdolls
+
 
 
 
