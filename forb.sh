@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.6"
+VERSION="1.6.1"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -195,6 +195,10 @@ run_analysis() {
                 local f_path=$(echo "$line" | cut -d: -f1)
                 local l_num=$(echo "$line" | cut -d: -f2)
                 local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
+                local clean_snippet=$(echo "$snippet" | sed 's|//.*||')
+                if ! echo "$clean_snippet" | grep -qE "\b${f_name}\b"; then
+                    continue
+                fi
                 local display_name=$( [ "$FULL_PATH" = true ] && echo "$f_path" | sed 's|^\./||' || basename "$f_path" )
 
                 local loc_prefix=$( [ "$single_file_mode" = true ] && [ "$VERBOSE" = false ] && echo "line ${l_num}" || echo "${display_name}:${l_num}" )
