@@ -348,7 +348,11 @@ run_analysis() {
 
         if [ -n "$SPECIFIC_FILES" ]; then
             local include_flags=""
-            for f in $SPECIFIC_FILES; do include_flags+=" --include=\"$f\""; done
+            IFS=' ' read -ra FILES_ARRAY <<< "$SPECIFIC_FILES"
+        for f in "${FILES_ARRAY[@]}"; do
+            f_escaped=$(printf '%s\n' "$f" | sed 's/[[\.*^$/]/\\&/g')
+            include_flags+=" --include=\"$f_escaped\""
+        done
     
             for f_name in $forbidden_list; do
             grep_res+=$(eval grep -rHE \"\\b${f_name}\\b\" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
