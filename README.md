@@ -16,7 +16,7 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 
 ---
 
-## 🆕 What's New in v1.7.4
+## 🆕 What's New in v1.7.5
 
 ### Auto Detect Binary !
 Say goodbye to lengthy commands! With the new Auto Detect Binary feature, ForbCheck becomes a 100% plug-and-play tool. If you run the script without specifying a target (by simply typing forb), the tool can now figure out what it needs to analyze on its own. It will first intelligently parse your Makefile to extract the name of the final binary. If no Makefile is found, it will automatically fall back to the most recently compiled executable in your current directory. Coupled with the dynamic presets system, this addition allows you to launch a complete, accurate, and secure analysis of your project with a single keystroke. The ultimate user experience!
