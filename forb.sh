@@ -302,6 +302,19 @@ process_list() {
     show_list $check_args
 }
 
+clean_code_snippet() {
+    local snippet="$1"
+    local f_name="$2"
+    snippet=$(echo "$snippet" | sed 's|//.*||')
+    snippet=$(echo "$snippet" | sed 's|/\*.*\*/||g')
+    if echo "$snippet" | grep -qE "\b${f_name}\b"; then
+        echo "$snippet"
+        return 0
+    else
+        return 1
+    fi
+}
+
 run_analysis() {
     cache_file="$INSTALL_DIR/.forb_cache"
     mkdir -p "$INSTALL_DIR"
@@ -357,10 +370,11 @@ run_analysis() {
                 local f_path=$(echo "$line" | cut -d: -f1)
                 local l_num=$(echo "$line" | cut -d: -f2)
                 local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
-                local clean_snippet=$(echo "$snippet" | sed 's|//.*||')
-                if ! echo "$clean_snippet" | grep -qE "\b${f_name}\b"; then
-                    continue
+                
+                if ! clean_code_snippet "$snippet" "$f_name" > /dev/null; then
+                        continue
                 fi
+                local clean_snippet=$(clean_code_snippet "$snippet" "$f_name")
                 local display_name=$( [ "$FULL_PATH" = true ] && echo "$f_path" | sed 's|^\./||' || basename "$f_path" )
 
                 local loc_prefix=$( [ "$single_file_mode" = true ] && [ "$VERBOSE" = false ] && echo "line ${l_num}" || echo "${display_name}:${l_num}" )
