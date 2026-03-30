@@ -264,15 +264,21 @@ crop_line() {
         echo "$code"
     fi
 }
-detected=false
 auto_detect_libraries() {
     [ "$DISABLE_AUTO" = true ] && return
     [ "$USE_MLX" = true ] && return
 
     if ls -R . 2>/dev/null | grep -qiE "mlx|minilibx" || [ -f "libmlx.a" ] || \
-       nm "$TARGET" 2>/dev/null | grep -qiE "mlx_"; then
+        nm "$TARGET" 2>/dev/null | grep -qiE "mlx_"; then
         USE_MLX=true
-        detected=true
+        echo -e "${CYAN}[Auto-Detect] MiniLibX detected (Use --no-auto to scan everything)${NC}"
+    fi
+    if [ "$USE_MATH" = false ] && [ -n "$TARGET" ]; then
+        if grep -qE "\-lm\b" Makefile 2>/dev/null || \
+           nm -u "$TARGET" 2>/dev/null | grep -qE "\b(sin|cos|sqrt|pow|exp|atan2)f?\b"; then
+            USE_MATH=true
+            echo -e "${CYAN}[Auto-Detect] Math library detected (Use --no-auto to scan everything)${NC}"
+        fi
     fi
 }
 
@@ -550,7 +556,6 @@ fi
 if [ -n "$TARGET" ]; then
     auto_check_update
 fi
-
 if [ -f "$TARGET" ]; then
     cache_file="$INSTALL_DIR/.forb_cache"
     mkdir -p "$INSTALL_DIR"
@@ -582,14 +587,14 @@ if [ -f "$TARGET" ]; then
         fi
     fi
 fi
-
+auto_detect_libraries
 START_TIME=$(date +%s.%N)
 # --- AUTO-PRESET DETECTION ---
 if [ "$USE_PRESET" -eq 0 ] && [ "$DISABLE_PRESET" = false ] && [ -n "$TARGET" ]; then
     target_name=$(basename "$TARGET")
     if [ -f "$PRESET_DIR/${target_name}.preset" ]; then
         USE_PRESET=1
-        echo -e "${CYAN}[Auto-Preset] Preset '${target_name}.preset' detected and loaded automatically.${NC}"
+        echo -e "${CYAN}[Auto-Detect] Preset '${target_name}.preset' detected and loaded automatically.${NC}"
     fi
 fi
 
@@ -605,10 +610,7 @@ else
 fi
 AUTH_FUNCS=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 echo -e "${BLUE}Target bin:${NC} $TARGET\n"
-auto_detect_libraries
-if [ "$detected" = true ]; then
-    echo -e "${CYAN}MiniLibX detected (Use --no-auto to scan everything)${NC}"
-fi
+
 if [ "$SET_WARNING" = true ]; then
         echo -e "${YELLOW}Warning:${NC} Source content is newer than the binary."
         echo -e "         The results might not reflect your latest changes."
