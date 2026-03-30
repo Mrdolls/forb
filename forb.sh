@@ -7,9 +7,11 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.6.3"
+VERSION="1.7.0"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
+PRESET_DIR="$INSTALL_DIR/presets"
+USE_PRESET=0
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
 SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES="" ; SHOW_TIME=false ; DISABLE_AUTO=false
@@ -27,6 +29,13 @@ show_help() {
     printf "  %-24s %s\n" "-h, --help" "Show help message"
     printf "  %-24s %s\n" "-l, --list [<funcs...>]" "Show list or check specific functions"
     printf "  %-24s %s\n" "-e, --edit" "Edit authorized list"
+
+    echo -e "\n${BOLD}Presets:${NC}"
+    printf "  %-24s %s\n" "-P, --preset" "Load the preset matching the target name"
+    printf "  %-24s %s\n" "-cp, --create-preset" "Create and edit a new preset"
+    printf "  %-24s %s\n" "-lp, --list-presets" "Show all presets"
+    printf "  %-24s %s\n" "-op, --open-presets" "Open presets directory"
+    printf "  %-24s %s\n" "-rp, --remove-preset" "Delete an existing preset"
 
     echo -e "\n${BOLD}Scan Options:${NC}"
     printf "  %-24s %s\n" "-v, --verbose" "Show source code context"
@@ -70,6 +79,105 @@ update_script() {
         echo -e "${RED}Error: Failed to download update from GitHub.${RC}"
         return 1
     fi
+    exit 0
+}
+
+load_preset() {
+    local target_name="$1"
+
+    mkdir -p "$PRESET_DIR"
+    AUTH_FILE="$PRESET_DIR/${target_name}.preset"
+
+    if [ ! -f "$AUTH_FILE" ]; then
+        echo -e "\033[31mError: No preset found for '${target_name}'.\033[0m"
+        local available_presets
+        available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
+        if [ -z "$available_presets" ]; then
+            echo -e "\033[33mNo presets available.\033[0m"
+        else
+            echo -e "Available presets: \033[36m$available_presets\033[0m"
+        fi
+        exit 1
+    fi
+}
+
+list_presets() {
+    local should_exit="${1:-1}"
+    mkdir -p "$PRESET_DIR"
+    local available_presets
+    available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
+    if [ -z "$available_presets" ]; then
+        echo -e "\033[33mNo presets available in $PRESET_DIR\033[0m"
+    else
+        echo -e "Available presets: \033[36m$available_presets\033[0m"
+    fi
+    if [ "$should_exit" -eq 1 ]; then
+        exit 0
+    fi
+}
+
+open_presets() {
+    mkdir -p "$PRESET_DIR"
+    echo -e "\033[32mOpening presets directory: $PRESET_DIR\033[0m"
+    if command -v explorer.exe > /dev/null; then
+        (cd "$PRESET_DIR" && explorer.exe .)
+    elif command -v xdg-open > /dev/null; then
+        xdg-open "$PRESET_DIR"
+    elif command -v open > /dev/null; then
+        open "$PRESET_DIR"
+    else
+        echo -e "\033[31mError: Could not open the folder automatically. You can find it at: $PRESET_DIR\033[0m"
+    fi
+    exit 0
+}
+
+create_preset() {
+    mkdir -p "$PRESET_DIR"
+    echo -ne "${BLUE}${BOLD}Enter the name of the new preset (e.g., minishell): ${NC}"
+    read -r preset_name
+    if [ -z "$preset_name" ]; then
+        echo -e "${RED}Error: Preset name cannot be empty.${NC}"
+        exit 1
+    fi
+    preset_name=$(echo "$preset_name" | tr ' ' '-')
+
+    local new_file="$PRESET_DIR/${preset_name}.preset"
+    if [ -f "$new_file" ]; then
+        echo -e "${YELLOW}Preset '${preset_name}' already exists. Opening it for edition...${NC}"
+    else
+        echo -e "${GREEN}Creating new preset '${preset_name}'...${NC}"
+        touch "$new_file"
+    fi
+    command -v code &>/dev/null && code --wait "$new_file" || vim "$new_file" || nano "$new_file"
+
+    echo -e "${GREEN}[✔] Preset '${preset_name}' saved!${NC}"
+    exit 0
+}
+
+remove_preset() {
+    list_presets 0
+    echo -ne "\n${BLUE}${BOLD}Enter the name of the preset to remove: ${NC}"
+    read -r preset_name
+    if [ -z "$preset_name" ]; then
+        echo -e "${RED}Error: Preset name cannot be empty.${NC}"
+        exit 1
+    fi
+    local target_file="$PRESET_DIR/${preset_name}.preset"
+    if [ ! -f "$target_file" ]; then
+        echo -e "${RED}Error: Preset '${preset_name}' does not exist.${NC}"
+        exit 1
+    fi
+    echo -ne "${YELLOW}Are you sure you want to delete '${preset_name}'? (y/n): ${NC}"
+    read -r confirm
+    case "$confirm" in
+        [yY][eE][sS]|[yY])
+            rm -f "$target_file"
+            echo -e "${GREEN}[✔] Preset '${preset_name}' has been removed.${NC}"
+            ;;
+        *)
+            echo -e "${BLUE}Deletion aborted.${NC}"
+            ;;
+    esac
     exit 0
 }
 
@@ -121,6 +229,7 @@ auto_detect_libraries() {
 }
 
 show_list() {
+    local should_exit="${1:-1}"
     if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
         echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
         exit 0
@@ -138,12 +247,28 @@ show_list() {
         if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
             echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
         else
-            echo -e "${BLUE}${BOLD}Authorized functions:${NC} ${CYAN}(Use -e to edit)${NC}"
+            echo -e "${BLUE}${BOLD}Authorized functions (Default):${NC} ${CYAN}(Use -e to edit)${NC}"
             echo "---------------------------------------"
             tr ',' '\n' < "$AUTH_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | column -c 80
         fi
     fi
-    exit 0
+    if [ "$should_exit" -eq 1 ]; then
+        exit 0
+    fi
+}
+
+process_list() {
+    local check_args=""
+    while [[ $# -gt 0 && ! $1 =~ ^- ]]; do
+        check_args+="$1 "
+        shift
+    done
+    if [ ! -f "$AUTH_FILE" ]; then
+        mkdir -p "$(dirname "$AUTH_FILE")"
+        touch "$AUTH_FILE"
+    fi
+    AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    show_list $check_args
 }
 
 run_analysis() {
@@ -230,11 +355,35 @@ run_analysis() {
     return $errors
 }
 
+auto_check_update() {
+    local raw_url="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
+
+    # Silent curl with 1-second timeout to prevent lag
+    local remote_version
+    remote_version=$(curl -s --max-time 1 "$raw_url" | grep "^VERSION=" | head -n 1 | cut -d'"' -f2)
+
+    # If a version was successfully fetched
+    if [ -n "$remote_version" ]; then
+        if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
+            echo -ne "${YELLOW}New version of ForbCheck (v${remote_version}) is available! Update now? (y/n): ${NC}"
+            read -r choice
+            case "$choice" in
+                [yY][eE][sS]|[yY])
+                    update_script
+                    ;;
+                *)
+                    echo -e "${BLUE}Update skipped. Starting analysis...${NC}\n"
+                    ;;
+            esac
+        fi
+    fi
+}
+
 # --- MAIN ---
 
 args=()
 for arg in "$@"; do
-    if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" ]]; then
+    if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" || "$arg" == "-op" || "$arg" == "-lp" || "$arg" == "-cp" || "$arg" == "-rp" ]]; then
         args+=("$arg")
     elif [[ "$arg" == "--"* ]]; then
         args+=("$arg")
@@ -253,24 +402,17 @@ while [[ $# -gt 0 ]]; do
         -h|--help) show_help ;;
         -up|--update) update_script ;;
         -v) VERBOSE=true; shift ;;
+        --preset|-P) USE_PRESET=1; shift ;;
+        -lp|--list-presets) list_presets ;;
+        -op|--open-presets) open_presets ;;
+        -cp|--create-presets) create_preset ;;
+        -rp|--remove-preset) remove_preset ;;
         -p|--full-path) FULL_PATH=true; shift ;;
         -a) SHOW_ALL=true; shift ;;
         -mlx) USE_MLX=true; shift ;;
         -lm) USE_MATH=true; shift ;;
         -e) edit_list ;;
-        -l|--list)
-            shift
-            check_args=""
-            while [[ $# -gt 0 && ! $1 =~ ^- ]]; do
-                check_args+="$1 "
-                shift
-            done
-            if [ ! -f "$AUTH_FILE" ]; then
-                mkdir -p "$(dirname "$AUTH_FILE")"
-                touch "$AUTH_FILE"
-            fi
-            AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            show_list $check_args ;;
+        -l|--list) shift; process_list "$@" ;;
         -t|--time) SHOW_TIME=true; shift ;;
         --remove) uninstall_script ;;
         --no-auto) DISABLE_AUTO=true; shift ;;
@@ -289,6 +431,10 @@ fi
 if ! nm "$TARGET" &>/dev/null; then
     echo -e "${RED}Error: $TARGET is not a valid binary or object file.${NC}"
     exit 1
+fi
+
+if [ -n "$TARGET" ]; then
+    auto_check_update
 fi
 
 if [ -f "$TARGET" ]; then
@@ -318,12 +464,17 @@ if [ -f "$TARGET" ]; then
 fi
 
 START_TIME=$(date +%s.%N)
+if [ "$USE_PRESET" -eq 1 ]; then
+    load_preset "$TARGET"
+else
+    AUTH_FILE="$HOME/.forb/authorize.txt"
+fi
 AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-
+clear -x
 echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
-echo -e "${YELLOW}║          ForbCheck Detector         ║${NC}"
+echo -e "${YELLOW}║              ForbCheck              ║${NC}"
 echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
-echo -e "${BLUE}Target bin :${NC} $TARGET"
+echo -e "${BLUE}Target bin:${NC} $TARGET\n"
 auto_detect_libraries
 if [ "$detected" = true ]; then
     echo -e "${CYAN}MiniLibX detected (Use --no-auto to scan everything)${NC}"
@@ -334,6 +485,7 @@ if [ "$SET_WARNING" = true ]; then
         echo -e "         Consider ${GREEN}recompiling${NC} to be sure."
 fi
 [ -n "$SPECIFIC_FILES" ] && echo -e "${BLUE}Scope      :${NC} $SPECIFIC_FILES"
+echo -e "${BLUE}${BOLD}Execution:${NC}"
 echo "-------------------------------------------------"
 
 NM_RAW_DATA=$(find . -not -path '*/.*' -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 -P4 nm -A 2>/dev/null)
@@ -344,12 +496,12 @@ run_analysis
 total_errors=$?
 
 DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
-echo "-------------------------------------------------"
+echo -e "-------------------------------------------------\n"
 if [ $total_errors -eq 0 ]; then
-    echo -ne "\t\t${GREEN}RESULT: PERFECT"
+    echo -ne "\t\t${GREEN}RESULT: PERFECT\n"
 else
     [ $total_errors -gt 1 ] && s="s" || s=""
-    echo -ne "\t\t${RED}RESULT: FAILURE"
+    echo -ne "\t\t${RED}RESULT: FAILURE\n"
 fi
 
 if [ "$SHOW_TIME" = true ]; then
