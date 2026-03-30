@@ -16,23 +16,22 @@ It relies on `nm` to inspect unresolved symbols and reports **exact source locat
 
 ---
 
-## 🆕 What's New in v1.6.3
+## 🆕 What's New in v1.7.0
 
-### Bug Fixes & Stability
-* **Auto-Initialization:** Fixed a bug where running `forb -l` on a fresh install would throw an error. ForbCheck now silently and safely generates its required configuration files (`authorize.txt`) if they are missing.
+### The Ultimate Preset Management System
+* **Create & Edit on the Fly:** Added the `-cp` (`--create-preset`) flag. Instantly generate a new preset and open it in your favorite editor (VS Code, Vim, Nano) without leaving the terminal.
+* **Interactive Removal:** Clean up your workspace with `-rp` (`--remove-preset`). It safely lists your configurations and asks for confirmation before deleting anything.
+* **Quick List & Access:** Use `-lp` (`--list-presets`) to view all your saved presets, or `-op` (`--open-presets`) to pop open the folder directly in your GUI.
+* **Cross-OS Folder Opening:** The `-op` command natively supports Linux (`xdg-open`), macOS (`open`), and even Windows Subsystem for Linux (WSL via `explorer.exe`).
 
-### Smarter False-Positive Filtering
-* **Comment Ignoring:** ForbCheck is now smart enough to ignore forbidden keywords found in comments (e.g., `// TODO: remove printf`). It only flags code that actually compiles!
+### Smart & Silent Auto-Updates
+* **Lightning-Fast Checks:** ForbCheck now checks for new versions automatically before running an analysis. 
+* **Zero Lag Guarantee:** Built with a strict 1-second network timeout, the check is silently bypassed so your workflow is never slowed down.
 
-### Smart Sync & Cache
-* **Desync Warning:** Modified your `.c` files but forgot to recompile? The tool now alerts you immediately to prevent testing against an old binary.
-* **Undo-Friendly:** The intelligent cache tracks line counts and file sizes. If you undo changes (Ctrl+Z), the warning resolves itself automatically.
-
-### Enhanced CLI Experience
-* **Hybrid List Command:** Use `-l` to view all authorized functions, or `forb -l <func>` to quickly check the status of a specific one.
-* **Global Awareness:** Seamlessly switch between projects (e.g., `minishell` -> `cub3d`). The tool updates its internal reference context instantly.
-* **Cleaner Help:** A reorganized `--help` menu for better readability during those late-night coding sessions.
-* **Optimized Performance:** Even on standard school lab machines, the overhead remains negligible, ensuring your workflow is never interrupted.
+### UX Polish & CLI Experience
+* **History-Safe Clear:** The terminal now intelligently clears the screen before displaying the final analysis, keeping the output perfectly readable *without* deleting your scrollback history. 
+* **Bulletproof Argument Parsing:** Fixed an edge-case bug where chaining certain short options would confuse the parser. The CLI is now more robust than ever.
+* **Under-the-Hood Refactoring:** Cleaned up the core routing logic (`-l` processing) for better maintainability and faster execution.
 
 ## Requirements
 
