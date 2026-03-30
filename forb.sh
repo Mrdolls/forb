@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.7.3"
+VERSION="1.7.4"
 INSTALL_DIR="$HOME/.forb"
 AUTH_FILE="$INSTALL_DIR/authorize.txt"
 PRESET_DIR="$INSTALL_DIR/presets"
@@ -319,6 +319,26 @@ clean_code_snippet() {
     fi
 }
 
+auto_detect_target() {
+    if [ -f "Makefile" ]; then
+        local make_target=$(grep -m 1 -E "^NAME[[:space:]]*=" Makefile | cut -d '=' -f2 | tr -d ' ' | tr -d '"' | tr -d "'")
+
+        if [ -n "$make_target" ] && [ -f "$make_target" ]; then
+            TARGET="$make_target"
+            echo -e "${CYAN}[Auto-Detect] Target found via Makefile: $TARGET${NC}"
+            return 0
+        fi
+    fi
+    local fallback_target=$(find . -maxdepth 1 -type f -executable ! -name "*.sh" ! -name ".*" -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n 1 | cut -d' ' -f2 | sed 's|^\./||')
+
+    if [ -n "$fallback_target" ] && [ -f "$fallback_target" ]; then
+        TARGET="$fallback_target"
+        echo -e "${CYAN}[Auto-Detect] Target found via file search: $TARGET${NC}"
+        return 0
+    fi
+    return 1
+}
+
 run_analysis() {
     cache_file="$INSTALL_DIR/.forb_cache"
     mkdir -p "$INSTALL_DIR"
@@ -342,7 +362,7 @@ run_analysis() {
         if grep -qx "$func" <<< "$AUTH_FUNCS"; then
             [ "$SHOW_ALL" = true ] && printf "   [${GREEN}OK${NC}]         -> %s\n" "$func"
         else
-            if grep -qF " U ${func}" <<< "$ALL_UNDEFINED"; then
+            if grep -qE " U ${func}$" <<< "$ALL_UNDEFINED"; then
                 forbidden_list+="${func} "
                 if [ -z "$SPECIFIC_FILES" ]; then errors=$((errors + 1)); fi
             fi
@@ -361,7 +381,7 @@ run_analysis() {
             f_escaped=$(printf '%s\n' "$f" | sed 's/[[\.*^$/]/\\&/g')
             include_flags+=" --include=\"$f_escaped\""
         done
-    
+
             for f_name in $forbidden_list; do
             grep_res+=$(grep -rHE \"\\b${f_name}\\b\" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
             done
@@ -371,7 +391,7 @@ run_analysis() {
         done
     fi
         for f_name in $forbidden_list; do
-            local specific_locs=$(grep -F ":.*$f_name" <<< "$grep_res")
+            local specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
 
         if [ -n "$specific_locs" ]; then
             printf "   [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
@@ -382,7 +402,7 @@ run_analysis() {
                 local f_path=$(echo "$line" | cut -d: -f1)
                 local l_num=$(echo "$line" | cut -d: -f2)
                 local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
-                
+
                 if ! clean_code_snippet "$snippet" "$f_name" > /dev/null; then
                         continue
                 fi
@@ -402,7 +422,7 @@ run_analysis() {
         elif [ -z "$SPECIFIC_FILES" ]; then
             printf "   [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
 
-            local files=$(grep -F " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
+            local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
             echo -ne "          ${YELLOW}↳ Found in objects: ${BLUE}${files}${NC}"
 
             if [[ "$f_name" =~ ^(strlen|memset|memcpy|printf|puts|putchar)$ ]]; then
@@ -488,8 +508,17 @@ done
 
 SET_WARNING=false
 
-if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-    echo -e "${RED}Error: Target invalid.${NC}" && exit 1
+if [ -z "$TARGET" ]; then
+    auto_detect_target
+
+    if [ -z "$TARGET" ]; then
+        echo -e "${RED}Error: No target specified and auto-detection failed.${NC}"
+        echo -e "Usage: forb [options] <target>"
+        exit 1
+    fi
+elif [ ! -f "$TARGET" ]; then
+    echo -e "${RED}Error: Target '$TARGET' is invalid or does not exist.${NC}"
+    exit 1
 fi
 
 if ! nm "$TARGET" &>/dev/null; then
