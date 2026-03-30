@@ -200,7 +200,7 @@ Open-source project intended for educational use.
 
 ## Author
 
-Mrdolls
+Mrdolls - 2025
 
 
 
