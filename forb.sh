@@ -14,7 +14,7 @@ PRESET_DIR="$INSTALL_DIR/presets"
 USE_PRESET=0
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
-SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES="" ; SHOW_TIME=false ; DISABLE_AUTO=false
+SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES="" ; SHOW_TIME=false ; DISABLE_AUTO=false ; DISABLE_PRESET=false
 
 # --- FUNCTIONS ---
 
@@ -32,6 +32,7 @@ show_help() {
 
     echo -e "\n${BOLD}Presets:${NC}"
     printf "  %-24s %s\n" "-P, --preset" "Load the preset matching the target name"
+    printf "  %-24s %s\n" "-np, --no-preset" "Disable auto-preset and force default list"
     printf "  %-24s %s\n" "-gp, --get-presets" "Restore default presets (overwrites matches)"
     printf "  %-24s %s\n" "-cp, --create-preset" "Create and edit a new preset"
     printf "  %-24s %s\n" "-lp, --list-presets" "Show all presets"
@@ -110,7 +111,7 @@ get_presets() {
     echo -e "${BLUE}Downloading default presets from GitHub...${NC}"
     mkdir -p "$PRESET_DIR"
     if curl -sL "https://github.com/Mrdolls/forbCheck/archive/refs/heads/main.tar.gz" | tar -xz -C /tmp "forbCheck-main/presets" 2>/dev/null; then
-        
+
         if [[ "$1" == "manual" ]]; then
             cp -r /tmp/forbCheck-main/presets/* "$PRESET_DIR/" 2>/dev/null
             echo -e "${GREEN}[✔] Default presets successfully restored!${NC}"
@@ -123,7 +124,7 @@ get_presets() {
                     added=$((added + 1))
                 fi
             done
-            
+
             if [ $added -gt 0 ]; then
                 echo -e "${GREEN}[✔] Added $added new preset(s) during update!${NC}"
             else
@@ -482,7 +483,7 @@ auto_check_update() {
 
 args=()
 for arg in "$@"; do
-    if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" || "$arg" == "-op" || "$arg" == "-lp" || "$arg" == "-cp" || "$arg" == "-rp" || "$arg" == "-gp" ]]; then
+    if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" || "$arg" == "-op" || "$arg" == "-lp" || "$arg" == "-cp" || "$arg" == "-rp" || "$arg" == "-gp" || "$arg" == "-np" ]]; then
         args+=("$arg")
     elif [[ "$arg" == "--"* ]]; then
         args+=("$arg")
@@ -502,6 +503,7 @@ while [[ $# -gt 0 ]]; do
         -up|--update) update_script ;;
         -v) VERBOSE=true; shift ;;
         --preset|-P) USE_PRESET=1; shift ;;
+        -np|--no-preset) DISABLE_PRESET=true; shift ;;
         -gp|--get-presets) get_presets "manual";;
         -lp|--list-presets) list_presets ;;
         -op|--open-presets) open_presets ;;
@@ -523,7 +525,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 SET_WARNING=false
-
+clear -x
+echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
+echo -e "${YELLOW}║              ForbCheck              ║${NC}"
+echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
 if [ -z "$TARGET" ]; then
     auto_detect_target
 
@@ -579,16 +584,26 @@ if [ -f "$TARGET" ]; then
 fi
 
 START_TIME=$(date +%s.%N)
+# --- AUTO-PRESET DETECTION ---
+if [ "$USE_PRESET" -eq 0 ] && [ "$DISABLE_PRESET" = false ] && [ -n "$TARGET" ]; then
+    target_name=$(basename "$TARGET")
+    if [ -f "$PRESET_DIR/${target_name}.preset" ]; then
+        USE_PRESET=1
+        echo -e "${CYAN}[Auto-Preset] Preset '${target_name}.preset' detected and loaded automatically.${NC}"
+    fi
+fi
+
 if [ "$USE_PRESET" -eq 1 ]; then
     load_preset "$TARGET"
 else
     AUTH_FILE="$HOME/.forb/authorize.txt"
+    if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
+        mkdir -p "$HOME/.forb"
+        touch "$AUTH_FILE"
+        echo -e "${YELLOW}[Warning] No preset loaded and authorize.txt is empty. Using empty list.${NC}"
+    fi
 fi
-AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-clear -x
-echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
-echo -e "${YELLOW}║              ForbCheck              ║${NC}"
-echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
+AUTH_FUNCS=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 echo -e "${BLUE}Target bin:${NC} $TARGET\n"
 auto_detect_libraries
 if [ "$detected" = true ]; then
