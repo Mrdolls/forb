@@ -331,19 +331,22 @@ run_analysis() {
             fi
         fi
     done <<< "$raw_funcs"
-    local pattern=$(echo "$forbidden_list" | sed 's/ /|/g; s/|$//')
-    local regex_pattern="\b(${pattern})\b"
-    local grep_res
+    local grep_res=""
 
-    if [ -n "$SPECIFIC_FILES" ]; then
-        local include_flags=""
-        for f in $SPECIFIC_FILES; do include_flags+=" --include=\"$f\""; done
-        grep_res=$(eval grep -rHE \"$regex_pattern\" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")
+        if [ -n "$SPECIFIC_FILES" ]; then
+            local include_flags=""
+            for f in $SPECIFIC_FILES; do include_flags+=" --include=\"$f\""; done
+    
+            for f_name in $forbidden_list; do
+            grep_res+=$(eval grep -rHE \"\\b${f_name}\\b\" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
+            done
     else
-        grep_res=$(grep -rHE "$regex_pattern" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")
+        for f_name in $forbidden_list; do
+            grep_res+=$(grep -rHE "\b${f_name}\b" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
+        done
     fi
-    for f_name in $forbidden_list; do
-        local specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
+        for f_name in $forbidden_list; do
+            local specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
 
         if [ -n "$specific_locs" ]; then
             printf "   [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
