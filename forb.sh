@@ -342,7 +342,7 @@ run_analysis() {
         if grep -qx "$func" <<< "$AUTH_FUNCS"; then
             [ "$SHOW_ALL" = true ] && printf "   [${GREEN}OK${NC}]         -> %s\n" "$func"
         else
-            if grep -qE " U ${func}" <<< "$ALL_UNDEFINED"; then
+            if grep -qF " U ${func}" <<< "$ALL_UNDEFINED"; then
                 forbidden_list+="${func} "
                 if [ -z "$SPECIFIC_FILES" ]; then errors=$((errors + 1)); fi
             fi
@@ -371,7 +371,7 @@ run_analysis() {
         done
     fi
         for f_name in $forbidden_list; do
-            local specific_locs=$(grep ":.*$f_name" <<< "$grep_res")
+            local specific_locs=$(grep -F ":.*$f_name" <<< "$grep_res")
 
         if [ -n "$specific_locs" ]; then
             printf "   [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
@@ -402,7 +402,7 @@ run_analysis() {
         elif [ -z "$SPECIFIC_FILES" ]; then
             printf "   [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
 
-            local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
+            local files=$(grep -F " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
             echo -ne "          ${YELLOW}↳ Found in objects: ${BLUE}${files}${NC}"
 
             if [[ "$f_name" =~ ^(strlen|memset|memcpy|printf|puts|putchar)$ ]]; then
