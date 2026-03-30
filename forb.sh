@@ -110,14 +110,30 @@ get_presets() {
     echo -e "${BLUE}Downloading default presets from GitHub...${NC}"
     mkdir -p "$PRESET_DIR"
     if curl -sL "https://github.com/Mrdolls/forbCheck/archive/refs/heads/main.tar.gz" | tar -xz -C /tmp "forbCheck-main/presets" 2>/dev/null; then
-        cp -r /tmp/forbCheck-main/presets/* "$PRESET_DIR/" 2>/dev/null
+        
+        if [[ "$1" == "manual" ]]; then
+            cp -r /tmp/forbCheck-main/presets/* "$PRESET_DIR/" 2>/dev/null
+            echo -e "${GREEN}[✔] Default presets successfully restored!${NC}"
+        else
+            local added=0
+            for preset in /tmp/forbCheck-main/presets/*; do
+                local base_name=$(basename "$preset")
+                if [ ! -f "$PRESET_DIR/$base_name" ]; then
+                    cp "$preset" "$PRESET_DIR/"
+                    added=$((added + 1))
+                fi
+            done
+            
+            if [ $added -gt 0 ]; then
+                echo -e "${GREEN}[✔] Added $added new preset(s) during update!${NC}"
+            else
+                echo -e "${GREEN}[✔] Presets checked (no user modifications overwritten).${NC}"
+            fi
+        fi
         rm -rf "/tmp/forbCheck-main"
-
-        echo -e "${GREEN}[✔] Default presets successfully downloaded!${NC}"
     else
         echo -e "${RED}[✘] Error: Failed to download presets. Check your connection.${NC}"
     fi
-
     if [[ "$1" == "manual" ]]; then
         exit 0
     fi
