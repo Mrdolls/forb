@@ -14,19 +14,17 @@ main() {
     clear
     echo -e "${C_BLUE}Starting ForbCheck Installation...${C_RESET}"
     
-    # Création du dossier et téléchargement
     mkdir -p "$INSTALL_DIR"
     echo -e "Downloading ForbCheck..."
     curl -sL "$RAW_URL" -o "$BIN_PATH"
     chmod +x "$BIN_PATH"
     
-    # Création du fichier de complétion (compatible Bash, et Zsh via bashcompinit)
     cat << 'EOF' > "$COMPLETION_FILE"
 _forb_completion() {
     local cur opts
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
-    opts="-v -f -p -a -t -up -e -l -mlx -lm --remove --no-auto"
+    opts="-v -f -p -a -t -up -e -l -mlx -lm --remove --no-auto -P -np -gp -cp -lp -op -rp"
 
     if [[ ${cur} == -* ]] ; then
         COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
@@ -36,13 +34,11 @@ _forb_completion() {
 complete -F _forb_completion forb
 EOF
 
-    # --- NOUVELLE LOGIQUE D'INSTALLATION MULTI-SHELL ---
     CONFIG_FILES=("$HOME/.zshrc" "$HOME/.bashrc")
     CONFIG_UPDATED=0
 
     for config in "${CONFIG_FILES[@]}"; do
         if [ -f "$config" ]; then
-            # Nettoyage d'une éventuelle ancienne installation
             sed -i.bak '/# ForbCheck/d' "$config" 2>/dev/null
             sed -i.bak "/alias forb=/d" "$config" 2>/dev/null
             sed -i.bak "/forb_completion.sh/d" "$config" 2>/dev/null
@@ -51,7 +47,6 @@ EOF
             echo -e "\n# ForbCheck" >> "$config"
             echo "alias forb='bash $BIN_PATH'" >> "$config"
 
-            # Injection spécifique pour Zsh (compatibilité avec l'autocomplétion Bash)
             if [[ "$config" == *".zshrc" ]]; then
                 echo "autoload -U +X compinit && compinit" >> "$config"
                 echo "autoload -U +X bashcompinit && bashcompinit" >> "$config"
@@ -69,7 +64,8 @@ EOF
         echo "source $COMPLETION_FILE" >> "$HOME/.profile"
         echo -e "${C_GREEN}✔ Added configuration to $HOME/.profile${C_RESET}"
     fi
-
+    echo -e "\n${C_BLUE}Fetching default presets...${C_RESET}"
+    bash "$BIN_PATH" -gp
     echo -e "\n${C_GREEN}✔ ForbCheck installed successfully!${C_RESET}"
     echo -e "${C_BLUE}Please restart your terminal or run:${C_RESET}"
     echo -e "  source ~/.zshrc  (if using Zsh)"
