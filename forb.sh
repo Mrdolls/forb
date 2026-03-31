@@ -7,10 +7,10 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.8.1"
+VERSION="1.9.0"
 INSTALL_DIR="$HOME/.forb"
-AUTH_FILE="$INSTALL_DIR/authorize.txt"
 PRESET_DIR="$INSTALL_DIR/presets"
+AUTH_FILE="$PRESET_DIR/default.preset"
 USE_PRESET=0
 UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
@@ -40,11 +40,12 @@ show_help() {
     printf "  %-24s %s\n" "-rp, --remove-preset" "Delete an existing preset"
 
     echo -e "\n${BOLD}Scan Options:${NC}"
+    printf "  %-24s %s\n" "-s, --source" "Scan source files for unauthorized C functions (use after --no-auto to force menu)"
     printf "  %-24s %s\n" "-v, --verbose" "Show source code context"
     printf "  %-24s %s\n" "<target> -f <files...>" "Limit scan to specific files"
     printf "  %-24s %s\n" "-p, --full-path" "Show full paths"
     printf "  %-24s %s\n" "-a, --all" "Show authorized functions during scan"
-    printf "  %-24s %s\n" "--no-auto" "Disable automatic library detection"
+    printf "  %-24s %s\n" "--no-auto" "Disable auto-detection (must be used BEFORE -s)"
 
     echo -e "\n${BOLD}Library Filters:${NC}"
     printf "  %-24s %s\n" "-mlx" "Ignore MiniLibX internal calls"
@@ -59,6 +60,145 @@ show_help() {
 
 version_to_int() {
     echo "$1" | sed 's/v//' | awk -F. '{ printf("%d%03d%03d\n", $1,$2,$3); }'
+}
+
+get_user_defined_funcs() {
+    local files=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
+    [ -z "$files" ] && return
+
+    perl -0777 -ne '
+        s/\/\*.*?\*\///gs;
+        s/\/\/.*//g;
+        while (/\b([a-zA-Z_]\w*)\s*(\((?:[^()]++|(?2))*\))\s*\{/gs) {
+            print "$1\n";
+        }
+    ' $files 2>/dev/null | grep -vE "^(if|while|for|switch|else|return)$" | sort -u | tr '\n' ' '
+}
+
+select_preset() {
+    if [ "$DISABLE_AUTO" != "true" ]; then
+        local current_dir=$(basename "$PWD")
+        local current_dir_lower=$(echo "$current_dir" | tr '[:upper:]' '[:lower:]')
+        for preset_file in "$PRESET_DIR"/*.preset; do
+            [ -e "$preset_file" ] || continue
+            local base_name=$(basename "$preset_file" .preset)
+            local base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
+
+            if [ "$current_dir_lower" == "$base_name_lower" ]; then
+                echo -e "${CYAN}Auto-detected project: ${BOLD}${base_name}${NC}"
+                export SELECTED_PRESET="$base_name"
+                return 0
+            fi
+        done
+        for preset_file in "$PRESET_DIR"/*.preset; do
+            [ -e "$preset_file" ] || continue
+            local base_name=$(basename "$preset_file" .preset)
+            local base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$current_dir_lower" == *"$base_name_lower"* ]]; then
+                echo -e "${CYAN}Smart-detected project: ${BOLD}${base_name}${NC} (from folder '${current_dir}')"
+                export SELECTED_PRESET="$base_name"
+                return 0
+            fi
+        done
+    fi
+    [ "$DISABLE_AUTO" == "true" ] && echo -e "\n${YELLOW}${BOLD}Auto-detection disabled by --no-auto flag.${NC}"
+    echo -e "${CYAN}${BOLD}Select a project preset:${NC}"
+
+    local presets=($(ls "$PRESET_DIR" 2>/dev/null | grep '\.preset$' | sed 's/\.preset//'))
+
+    if [ ${#presets[@]} -eq 0 ]; then
+        echo -e "${RED}Error: No presets found in $PRESET_DIR.${NC}"
+        exit 1
+    fi
+    PS3=$'\n\033[1;36mEnter the number of your preset: \033[0m'
+    select choice in "${presets[@]}"; do
+        if [ -n "$choice" ]; then
+            export SELECTED_PRESET="$choice"
+            echo -e "${GREEN}Loaded preset: ${BOLD}$SELECTED_PRESET${NC}"
+            break
+        else
+            echo -e "${RED}Invalid selection. Please enter a valid number.${NC}"
+        fi
+    done
+}
+
+source_scan() {
+    select_preset
+    load_preset "$SELECTED_PRESET" || { echo -e "${RED}Error: Preset not found.${NC}"; exit 1; }
+
+    local files_list=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
+    local nb_files=$(echo "$files_list" | wc -l | tr -d ' ')
+    [ "$nb_files" -eq 0 ] && exit 1
+
+    echo -e "${BLUE}Building compiler-grade function shield...${NC}"
+    local my_funcs=$(get_user_defined_funcs)
+
+    echo -e "${BLUE}Scanning $nb_files source files...${NC}\n"
+
+    local authorized=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr '\n' ' ')
+
+    export ALLOW_MLX=0
+    if [[ "$authorized" == *"ALL_MLX"* ]]; then
+        export ALLOW_MLX=1
+    fi
+
+    if [[ "$authorized" == *"ALL_MATH"* ]]; then
+        local math_funcs="cos sin tan acos asin atan atan2 cosh sinh tanh exp frexp ldexp log log10 modf pow sqrt ceil fabs floor fmod round trunc abs labs"
+        authorized="$authorized $math_funcs"
+    fi
+
+    local keywords="if while for return sizeof switch else case default do static const volatile struct union enum typedef extern inline unsigned signed short long int char float double void bool va_arg va_start va_end va_list NULL del f"
+    local macros="WIFEXITED WEXITSTATUS WIFSIGNALED WTERMSIG S_ISDIR S_ISREG"
+
+    export WHITELIST="$authorized $my_funcs $keywords $macros"
+    echo "$files_list" | tr '\n' '\0' | xargs -0 perl -0777 -e '
+        my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST});
+        my $allow_mlx = $ENV{ALLOW_MLX};
+        my $found = 0;
+
+        foreach my $file (@ARGV) {
+            # MODIFICATION ICI : On passe au fichier suivant si c est un fichier source de la MLX
+            if ($allow_mlx == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
+                next;
+            }
+
+            open(my $fh, "<", $file) or next;
+            my $content = do { local $/; <$fh> };
+            close($fh);
+
+            # Nettoyage
+            $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
+            $content =~ s{//.*}{}g;
+            $content =~ s{("(?:\\.|[^"\\])*")}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
+            $content =~ s{(\x27(?:\\.|[^\x27\\])*\x27)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
+
+            my @lines = split(/\n/, $content);
+            for (my $i = 0; $i < @lines; $i++) {
+                my $line = $lines[$i];
+
+                while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
+                    my $fname = $1;
+
+                    next if length($fname) <= 2;
+                    next if $safe{$fname};
+
+                    # MODIFICATION ICI : On pardonne les appels mlx_ dans TES fichiers
+                    next if ($allow_mlx == 1 && $fname =~ /^mlx_/);
+
+                    my $clean_file = $file;
+                    $clean_file =~ s|^\./||;
+
+                    printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                    $found = 1;
+                }
+            }
+        }
+        if (!$found) { print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n"; }
+    '
+
+    echo -e "\n${GREEN}Source audit complete.${NC}"
+    exit 0
 }
 
 load_preset() {
@@ -507,7 +647,14 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help) show_help ;;
         -up|--update) update_script ;;
+        --remove) uninstall_script ;;
+        --no-auto) DISABLE_AUTO=true; shift ;;
+        -s|--scan-source) source_scan ;;
         -v) VERBOSE=true; shift ;;
+        -p|--full-path) FULL_PATH=true; shift ;;
+        -a) SHOW_ALL=true; shift ;;
+        -mlx) USE_MLX=true; shift ;;
+        -lm) USE_MATH=true; shift ;;
         --preset|-P) USE_PRESET=1; shift ;;
         -np|--no-preset) DISABLE_PRESET=true; shift ;;
         -gp|--get-presets) get_presets "manual";;
@@ -515,15 +662,9 @@ while [[ $# -gt 0 ]]; do
         -op|--open-presets) open_presets ;;
         -cp|--create-presets) create_preset ;;
         -rp|--remove-preset) remove_preset ;;
-        -p|--full-path) FULL_PATH=true; shift ;;
-        -a) SHOW_ALL=true; shift ;;
-        -mlx) USE_MLX=true; shift ;;
-        -lm) USE_MATH=true; shift ;;
         -e) edit_list ;;
         -l|--list) shift; process_list "$@" ;;
         -t|--time) SHOW_TIME=true; shift ;;
-        --remove) uninstall_script ;;
-        --no-auto) DISABLE_AUTO=true; shift ;;
         -f) shift; SPECIFIC_FILES="$@"; break ;;
         -*) echo -e "${RED}Unknown option: $1${NC}"; exit 1 ;;
         *) TARGET=$1; shift ;;
@@ -589,7 +730,6 @@ if [ -f "$TARGET" ]; then
 fi
 auto_detect_libraries
 START_TIME=$(date +%s.%N)
-# --- AUTO-PRESET DETECTION ---
 if [ "$USE_PRESET" -eq 0 ] && [ "$DISABLE_PRESET" = false ] && [ -n "$TARGET" ]; then
     target_name=$(basename "$TARGET")
     if [ -f "$PRESET_DIR/${target_name}.preset" ]; then
@@ -601,11 +741,11 @@ fi
 if [ "$USE_PRESET" -eq 1 ]; then
     load_preset "$TARGET"
 else
-    AUTH_FILE="$HOME/.forb/authorize.txt"
+    AUTH_FILE="$PRESET_DIR/default.preset"
     if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
         mkdir -p "$HOME/.forb"
         touch "$AUTH_FILE"
-        echo -e "${YELLOW}[Warning] No preset loaded and authorize.txt is empty. Using empty list.${NC}"
+        echo -e "${YELLOW}[Warning] No preset loaded and default.preset is empty. Using empty list.${NC}"
     fi
 fi
 AUTH_FUNCS=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
