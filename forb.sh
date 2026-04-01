@@ -11,7 +11,7 @@ else
 fi
 
 # Constants
-readonly VERSION="1.9.6"
+readonly VERSION="1.9.7"
 readonly INSTALL_DIR="$HOME/.forb"
 readonly PRESET_DIR="$INSTALL_DIR/presets"
 readonly UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
