@@ -109,6 +109,13 @@ forb [options] [target] [-f <files...>]
 | `-f <files...>` | Limit analysis to specific files |
 | `-p`, `--full-path` | Show full paths |
 | `-a`, `--all` | Show authorized functions during scan |
+| `--no-auto` | Disable auto-detection (must be used BEFORE -s) |
+
+### Deep Scan
+
+| Option | Description |
+|------|-------------|
+| `-s`, `--source` | Scan source files for unauthorized C functions (use after --no-auto to force menu) |
 
 ### Library Filters
 
@@ -116,7 +123,7 @@ forb [options] [target] [-f <files...>]
 |------|-------------|
 | `-mlx` | Force ignore MiniLibX internal calls |
 | `-lm` | Force Ignore Math library internal calls |
-| `--no-auto` | Disable automatic library detection |
+
 
 ### Maintenance
 
@@ -141,6 +148,10 @@ forb [options] [target] [-f <files...>]
 ### Basic analysis with verbose (`-v`):
 
 <img width="601" height="354" alt="image" src="https://github.com/user-attachments/assets/1cc0e521-2e63-4a44-ae92-777c926480d7" />
+
+### Deep Scan (`-s`):
+
+<img width="568" height="166" alt="image" src="https://github.com/user-attachments/assets/3b30f666-b7e6-42c1-b425-8e8cb6f331da" />
 
 If the automatic detection doesn't work, here's the manual method:
 
