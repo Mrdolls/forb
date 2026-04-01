@@ -7,7 +7,7 @@ else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.9.0"
+VERSION="1.9.1"
 INSTALL_DIR="$HOME/.forb"
 PRESET_DIR="$INSTALL_DIR/presets"
 AUTH_FILE="$PRESET_DIR/default.preset"
@@ -41,7 +41,7 @@ show_help() {
 
     echo -e "\n${BOLD}Scan Options:${NC}"
     printf "  %-24s %s\n" "-v, --verbose" "Show source code context"
-    printf "  %-24s %s\n" "<target> -f <files...>" "Limit scan to specific files"
+    printf "  %-24s %s\n" "-f <files...>" "Limit scan to specific files"
     printf "  %-24s %s\n" "-p, --full-path" "Show full paths"
     printf "  %-24s %s\n" "-a, --all" "Show authorized functions during scan"
     printf "  %-24s %s\n" "--no-auto" "Disable auto-detection (must be used BEFORE -s)"
