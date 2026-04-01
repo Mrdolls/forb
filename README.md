@@ -83,55 +83,31 @@ forb [options] [target] [-f <files...>]
 
 ## Options
 
-### General
-| Option | Description |
-|------|-------------|
-| `-h`, `--help` | Display help message |
-| `-l`, `--list` `[<funcs...>]` | Show default authorized functions list |
-| `-e`, `--edit` | Edit default authorized functions list |
-
-### Presets
-| Option | Description |
-|------|-------------|
-| `-P`, `--preset` | Load the preset matching the target name |
-| `-np`, `--no-preset` | Disable auto-preset and force default list |
-| `-gp`, `--get-preset` | Restore default presets (overwrites matches) |
-| `-cp`, `--create-preset` | Create and edit a new preset |
-| `-lp`, `--list-presets` | Show all presets |
-| `-op`, `--open-presets` | Open presets directory |
-| `-rp`, `--remove-presets` | Delete an existing preset |
-
-### Scan Options
-
-| Option | Description |
-|------|-------------|
-| `-v`, `--verbose` | Show source code context |
-| `-f <files...>` | Limit analysis to specific files |
-| `-p`, `--full-path` | Show full paths |
-| `-a`, `--all` | Show authorized functions during scan |
-| `--no-auto` | Disable auto-detection (must be used BEFORE -s) |
-
-### Deep Scan
-
-| Option | Description |
-|------|-------------|
-| `-s`, `--source` | Scan source files for unauthorized C functions (use after --no-auto to force menu) |
-
-### Library Filters
-
-| Option | Description |
-|------|-------------|
-| `-mlx` | Force ignore MiniLibX internal calls |
-| `-lm` | Force Ignore Math library internal calls |
-
-
-### Maintenance
-
-| Option | Description |
-|------|-------------|
-| `-t`, `--time` | Show execution duration |
-| `-up`, `--update` | Update ForbCheck |
-| `--remove` | Uninstall ForbCheck |
+| Category | Option | Description |
+| :--- | :--- | :--- |
+| **Arguments** | `<target>` | Executable or library (`.a`, `.o`) to analyze. |
+| **General** | `-h, --help` | Show the help message. |
+| | `--json` | Generate a JSON output for automations. |
+| | `-l, --list [<funcs...>]` | Show authorized list or check specific functions. |
+| | `-e, --edit` | Open the authorized functions list for editing. |
+| **Presets** | `-P, --preset` | Load the preset matching the target name. |
+| | `-np, --no-preset` | Disable auto-preset and force default list. |
+| | `-gp, --get-presets` | Restore default presets from GitHub. |
+| | `-cp, --create-preset` | Create and edit a new custom preset. |
+| | `-lp, --list-presets` | Show all available presets. |
+| | `-op, --open-presets` | Open the presets directory in file explorer. |
+| | `-rp, --remove-preset` | Delete an existing preset. |
+| **Scan Options** | `-v, --verbose` | Verbose mode: show source code context with highlighting. |
+| | `-f <files...>` | Limit scan to specific files. |
+| | `-p, --full-path` | Show full file paths. |
+| | `-a, --all` | Show authorized functions during the scan. |
+| | `--no-auto` | Disable auto-detection (must be used before `-s`). |
+| **Deep Scan** | `-s, --source` | Deep scan source files for unauthorized C functions. |
+| **Library Filters** | `-mlx` | Ignore MiniLibX internal calls. |
+| | `-lm` | Ignore Math library internal calls. |
+| **Maintenance** | `-t, --time` | Show execution duration. |
+| | `-up, --update` | Check and install the latest version of ForbCheck. |
+| | `--remove` | Uninstall ForbCheck from the system. |
 
 ---
 
