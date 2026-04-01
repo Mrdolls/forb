@@ -65,7 +65,7 @@ crop_line() {
 
     # 3. On affiche le tout avec l'interprétation des couleurs activée
     echo -e "$final_code"
-}()
+}
 
 clean_code_snippet() {
     local snippet="$1"
