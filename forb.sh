@@ -1,22 +1,632 @@
 #!/bin/bash
 
-# --- COLOR MANAGEMENT ---
+# ==============================================================================
+#  SECTION 1: GLOBAL CONFIGURATION & COLORS
+# ==============================================================================
+
 if [[ -t 1 ]]; then
     BOLD="\033[1m"; GREEN="\033[0;32m"; RED="\033[0;31m"; YELLOW="\033[0;33m"; BLUE="\033[0;34m"; CYAN="\033[0;36m"; NC="\033[0m"
 else
     BOLD=""; GREEN=""; RED=""; YELLOW=""; BLUE=""; CYAN=""; NC=""
 fi
 
-VERSION="1.9.2"
-INSTALL_DIR="$HOME/.forb"
-PRESET_DIR="$INSTALL_DIR/presets"
+# Constants
+readonly VERSION="1.9.3"
+readonly INSTALL_DIR="$HOME/.forb"
+readonly PRESET_DIR="$INSTALL_DIR/presets"
+readonly UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
+
+# Global State Variables (Mutable)
 AUTH_FILE="$PRESET_DIR/default.preset"
 USE_PRESET=0
-UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
+SHOW_ALL=false
+USE_MLX=false
+USE_MATH=false
+FULL_PATH=false
+VERBOSE=false
+TARGET=""
+SPECIFIC_FILES=""
+SHOW_TIME=false
+DISABLE_AUTO=false
+DISABLE_PRESET=false
+SET_WARNING=false
 
-SHOW_ALL=false; USE_MLX=false; USE_MATH=false; FULL_PATH=false; VERBOSE=false; TARGET=""; SPECIFIC_FILES="" ; SHOW_TIME=false ; DISABLE_AUTO=false ; DISABLE_PRESET=false
 
-# --- FUNCTIONS ---
+# ==============================================================================
+#  SECTION 2: UTILITY FUNCTIONS (Low-level helpers)
+# ==============================================================================
+
+version_to_int() {
+    echo "$1" | sed 's/v//' | awk -F. '{ printf("%d%03d%03d\n", $1,$2,$3); }'
+}
+
+crop_line() {
+    local func="$1"
+    local code="$2"
+
+    if [ ${#code} -gt 65 ]; then
+        echo "$code" | awk -v f="$func" '{
+            pos = index($0, f);
+            start = (pos > 20) ? pos - 20 : 0;
+            print "..." substr($0, start, 60) "..."
+        }'
+    else
+        echo "$code"
+    fi
+}
+
+clean_code_snippet() {
+    local snippet="$1"
+    local f_name="$2"
+    local safe_name=$(printf '%s\n' "$f_name" | sed 's/[.[\*^$]/\\&/g')
+
+    snippet=$(echo "$snippet" | sed 's|//.*||')
+    snippet=$(echo "$snippet" | sed 's|/\*.*\*/||g')
+
+    if echo "$snippet" | grep -qE "\b${safe_name}\b"; then
+        echo "$snippet"
+        return 0
+    else
+        return 1
+    fi
+}
+
+
+# ==============================================================================
+#  SECTION 3: PRESET MANAGEMENT
+# ==============================================================================
+
+select_preset() {
+    local current_dir current_dir_lower preset_file base_name base_name_lower presets choice
+
+    if [ "$DISABLE_AUTO" != "true" ]; then
+        current_dir=$(basename "$PWD")
+        current_dir_lower=$(echo "$current_dir" | tr '[:upper:]' '[:lower:]')
+
+        # 1. Exact match
+        for preset_file in "$PRESET_DIR"/*.preset; do
+            [ -e "$preset_file" ] || continue
+            base_name=$(basename "$preset_file" .preset)
+            base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
+
+            if [ "$current_dir_lower" == "$base_name_lower" ]; then
+                echo -e "${CYAN}Auto-detected project: ${BOLD}${base_name}${NC}"
+                export SELECTED_PRESET="$base_name"
+                return 0
+            fi
+        done
+
+        # 2. Smart match (substring)
+        for preset_file in "$PRESET_DIR"/*.preset; do
+            [ -e "$preset_file" ] || continue
+            base_name=$(basename "$preset_file" .preset)
+            base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$current_dir_lower" == *"$base_name_lower"* ]]; then
+                echo -e "${CYAN}Smart-detected project: ${BOLD}${base_name}${NC} (from folder '${current_dir}')"
+                export SELECTED_PRESET="$base_name"
+                return 0
+            fi
+        done
+    fi
+
+    [ "$DISABLE_AUTO" == "true" ] && echo -e "\n${YELLOW}${BOLD}Auto-detection disabled by --no-auto flag.${NC}"
+    echo -e "${CYAN}${BOLD}Select a project preset:${NC}"
+
+    presets=($(ls "$PRESET_DIR" 2>/dev/null | grep '\.preset$' | sed 's/\.preset//'))
+
+    if [ ${#presets[@]} -eq 0 ]; then
+        echo -e "${RED}Error: No presets found in $PRESET_DIR.${NC}"
+        exit 1
+    fi
+
+    PS3=$'\n\033[1;36mEnter the number of your preset: \033[0m'
+    select choice in "${presets[@]}"; do
+        if [ -n "$choice" ]; then
+            export SELECTED_PRESET="$choice"
+            echo -e "${GREEN}Loaded preset: ${BOLD}$SELECTED_PRESET${NC}"
+            break
+        else
+            echo -e "${RED}Invalid selection. Please enter a valid number.${NC}"
+        fi
+    done
+}
+
+load_preset() {
+    local target_name="$1"
+    local available_presets
+
+    mkdir -p "$PRESET_DIR"
+    AUTH_FILE="$PRESET_DIR/${target_name}.preset"
+
+    if [ ! -f "$AUTH_FILE" ]; then
+        echo -e "\033[31mError: No preset found for '${target_name}'.\033[0m"
+        available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
+
+        if [ -z "$available_presets" ]; then
+            echo -e "\033[33mNo presets available.\033[0m"
+        else
+            echo -e "Available presets: \033[36m$available_presets\033[0m"
+        fi
+        exit 1
+    fi
+}
+
+list_presets() {
+    local should_exit="${1:-1}"
+    local available_presets
+
+    mkdir -p "$PRESET_DIR"
+    available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
+
+    if [ -z "$available_presets" ]; then
+        echo -e "\033[33mNo presets available in $PRESET_DIR\033[0m"
+    else
+        echo -e "Available presets: \033[36m$available_presets\033[0m"
+    fi
+
+    [ "$should_exit" -eq 1 ] && exit 0
+}
+
+get_presets() {
+    local mode="$1"
+    local choice added preset base_name
+
+    if [[ "$mode" == "manual" ]]; then
+        echo -ne "${YELLOW}${BOLD}Warning: This will download default presets. Any existing preset with the same name will be overwritten. Continue? (y/n): ${NC}"
+        read -r choice
+        case "$choice" in
+            [yY][eE][sS]|[yY]) ;;
+            *) echo -e "${BLUE}Operation aborted.${NC}"; exit 0 ;;
+        esac
+    fi
+
+    echo -e "${BLUE}Downloading default presets from GitHub...${NC}"
+    mkdir -p "$PRESET_DIR"
+
+    if curl -sL "https://github.com/Mrdolls/forbCheck/archive/refs/heads/main.tar.gz" | tar -xz -C /tmp "forbCheck-main/presets" 2>/dev/null; then
+        if [[ "$mode" == "manual" ]]; then
+            cp -r /tmp/forbCheck-main/presets/* "$PRESET_DIR/" 2>/dev/null
+            echo -e "${GREEN}[✔] Default presets successfully restored!${NC}"
+        else
+            added=0
+            for preset in /tmp/forbCheck-main/presets/*; do
+                base_name=$(basename "$preset")
+                if [ ! -f "$PRESET_DIR/$base_name" ]; then
+                    cp "$preset" "$PRESET_DIR/"
+                    added=$((added + 1))
+                fi
+            done
+
+            if [ $added -gt 0 ]; then
+                echo -e "${GREEN}[✔] Added $added new preset(s) during update!${NC}"
+            else
+                echo -e "${GREEN}[✔] Presets checked (no user modifications overwritten).${NC}"
+            fi
+        fi
+        rm -rf "/tmp/forbCheck-main"
+    else
+        echo -e "${RED}[✘] Error: Failed to download presets. Check your connection.${NC}"
+    fi
+
+    [ "$mode" == "manual" ] && exit 0
+}
+
+open_presets() {
+    mkdir -p "$PRESET_DIR"
+    echo -e "\033[32mOpening presets directory: $PRESET_DIR\033[0m"
+
+    if command -v explorer.exe > /dev/null; then
+        (cd "$PRESET_DIR" && explorer.exe .)
+    elif command -v xdg-open > /dev/null; then
+        xdg-open "$PRESET_DIR"
+    elif command -v open > /dev/null; then
+        open "$PRESET_DIR"
+    else
+        echo -e "\033[31mError: Could not open the folder automatically. You can find it at: $PRESET_DIR\033[0m"
+    fi
+    exit 0
+}
+
+create_preset() {
+    local preset_name new_file
+    mkdir -p "$PRESET_DIR"
+
+    echo -ne "${BLUE}${BOLD}Enter the name of the new preset (e.g., minishell): ${NC}"
+    read -r preset_name
+
+    if [ -z "$preset_name" ]; then
+        echo -e "${RED}Error: Preset name cannot be empty.${NC}"
+        exit 1
+    fi
+
+    preset_name=$(echo "$preset_name" | tr ' ' '-')
+    new_file="$PRESET_DIR/${preset_name}.preset"
+
+    if [ -f "$new_file" ]; then
+        echo -e "${YELLOW}Preset '${preset_name}' already exists. Opening it for edition...${NC}"
+    else
+        echo -e "${GREEN}Creating new preset '${preset_name}'...${NC}"
+        touch "$new_file"
+    fi
+
+    command -v code &>/dev/null && code --wait "$new_file" || vim "$new_file" || nano "$new_file"
+    echo -e "${GREEN}[✔] Preset '${preset_name}' saved!${NC}"
+    exit 0
+}
+
+remove_preset() {
+    local preset_name target_file confirm
+    list_presets 0
+
+    echo -ne "\n${BLUE}${BOLD}Enter the name of the preset to remove: ${NC}"
+    read -r preset_name
+
+    if [ -z "$preset_name" ]; then
+        echo -e "${RED}Error: Preset name cannot be empty.${NC}"
+        exit 1
+    fi
+
+    target_file="$PRESET_DIR/${preset_name}.preset"
+    if [ ! -f "$target_file" ]; then
+        echo -e "${RED}Error: Preset '${preset_name}' does not exist.${NC}"
+        exit 1
+    fi
+
+    echo -ne "${YELLOW}Are you sure you want to delete '${preset_name}'? (y/n): ${NC}"
+    read -r confirm
+    case "$confirm" in
+        [yY][eE][sS]|[yY])
+            rm -f "$target_file"
+            echo -e "${GREEN}[✔] Preset '${preset_name}' has been removed.${NC}"
+            ;;
+        *)
+            echo -e "${BLUE}Deletion aborted.${NC}"
+            ;;
+    esac
+    exit 0
+}
+
+edit_list() {
+    [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
+    command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE" || nano "$AUTH_FILE"
+    exit 0
+}
+
+show_list() {
+    local should_exit="${1:-1}"
+    local f
+
+    if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
+        echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
+        exit 0
+    fi
+
+    if [ $# -gt 1 ]; then # Greater than 1 because $1 is should_exit
+        shift
+        echo -e "${BLUE}${BOLD}Checking functions:${NC}"
+        for f in "$@"; do
+            if grep -qFx "$f" <<< "$AUTH_FUNCS"; then
+                echo -e "   [${GREEN}OK${NC}] -> $f"
+            else
+                echo -e "   [${RED}KO${NC}] -> $f"
+            fi
+        done
+    else
+        echo -e "${BLUE}${BOLD}Authorized functions (Default):${NC} ${CYAN}(Use -e to edit)${NC}"
+        echo "---------------------------------------"
+        tr ',' '\n' < "$AUTH_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | column -c 80
+    fi
+
+    [ "$should_exit" -eq 1 ] && exit 0
+}
+
+process_list() {
+    local check_args=""
+
+    while [[ $# -gt 0 && ! $1 =~ ^- ]]; do
+        check_args+="$1 "
+        shift
+    done
+
+    if [ ! -f "$AUTH_FILE" ]; then
+        mkdir -p "$(dirname "$AUTH_FILE")"
+        touch "$AUTH_FILE"
+    fi
+
+    if [ -L "$AUTH_FILE" ]; then
+        echo "Error: AUTH_FILE must be a regular file, not a symlink"
+        exit 1
+    fi
+
+    AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    show_list 1 $check_args
+}
+
+
+# ==============================================================================
+#  SECTION 4: CORE ENGINE - SCAN & DETECT
+# ==============================================================================
+
+auto_detect_libraries() {
+    [ "$DISABLE_AUTO" = true ] && return
+    [ "$USE_MLX" = true ] && return
+
+    if ls -R . 2>/dev/null | grep -qiE "mlx|minilibx" || [ -f "libmlx.a" ] || \
+        nm "$TARGET" 2>/dev/null | grep -qiE "mlx_"; then
+        USE_MLX=true
+        echo -e "${CYAN}[Auto-Detect] MiniLibX detected (Use --no-auto to scan everything)${NC}"
+    fi
+
+    if [ "$USE_MATH" = false ] && [ -n "$TARGET" ]; then
+        if grep -qE "\-lm\b" Makefile 2>/dev/null || \
+           nm -u "$TARGET" 2>/dev/null | grep -qE "\b(sin|cos|sqrt|pow|exp|atan2)f?\b"; then
+            USE_MATH=true
+            echo -e "${CYAN}[Auto-Detect] Math library detected (Use --no-auto to scan everything)${NC}"
+        fi
+    fi
+}
+
+auto_detect_target() {
+    local make_target fallback_targets fallback_target
+
+    # 1. Try to detect via Makefile
+    if [ -f "Makefile" ]; then
+        make_target=$(grep -m 1 -E "^NAME[[:space:]]*=" Makefile | cut -d '=' -f2 | tr -d ' ' | tr -d '"' | tr -d "'")
+        if [ -n "$make_target" ] && [ -f "$make_target" ] && nm "$make_target" &>/dev/null; then
+            TARGET="$make_target"
+            echo -e "${CYAN}[Auto-Detect] Target found via Makefile: $TARGET${NC}"
+            return 0
+        fi
+    fi
+
+    # 2. Try to detect via recent executable files
+    fallback_targets=$(find . -maxdepth 1 -type f -executable ! -name "*.sh" ! -name ".*" -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2 | sed 's|^\./||')
+
+    for fallback_target in $fallback_targets; do
+        if [ -n "$fallback_target" ] && [ -f "$fallback_target" ] && nm "$fallback_target" &>/dev/null; then
+            TARGET="$fallback_target"
+            echo -e "${CYAN}[Auto-Detect] Target found via file search: $TARGET${NC}"
+            return 0
+        fi
+    done
+
+    return 1
+}
+
+get_user_defined_funcs() {
+    local files=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
+    [ -z "$files" ] && return
+
+    perl -0777 -ne '
+        s/\/\*.*?\*\///gs;
+        s/\/\/.*//g;
+        while (/\b([a-zA-Z_]\w*)\s*(\((?:[^()]++|(?2))*\))\s*\{/gs) {
+            print "$1\n";
+        }
+    ' $files 2>/dev/null | grep -vE "^(if|while|for|switch|else|return)$" | sort -u | tr '\n' ' '
+}
+
+source_scan() {
+    local files_list nb_files my_funcs authorized math_funcs keywords macros
+
+    select_preset
+    load_preset "$SELECTED_PRESET" || { echo -e "${RED}Error: Preset not found.${NC}"; exit 1; }
+
+    files_list=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
+    nb_files=$(echo "$files_list" | wc -l | tr -d ' ')
+    [ "$nb_files" -eq 0 ] && exit 1
+
+    echo -e "${BLUE}Building compiler-grade function shield...${NC}"
+    my_funcs=$(get_user_defined_funcs)
+
+    echo -e "${BLUE}Scanning $nb_files source files...${NC}\n"
+
+    authorized=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr '\n' ' ')
+
+    export ALLOW_MLX=0
+    if [[ "$authorized" == *"ALL_MLX"* ]]; then
+        export ALLOW_MLX=1
+    fi
+
+    if [[ "$authorized" == *"ALL_MATH"* ]]; then
+        math_funcs="cos sin tan acos asin atan atan2 cosh sinh tanh exp frexp ldexp log log10 modf pow sqrt ceil fabs floor fmod round trunc abs labs"
+        authorized="$authorized $math_funcs"
+    fi
+
+    keywords="if while for return sizeof switch else case default do static const volatile struct union enum typedef extern inline unsigned signed short long int char float double void bool va_arg va_start va_end va_list NULL del f"
+    macros="WIFEXITED WEXITSTATUS WIFSIGNALED WTERMSIG S_ISDIR S_ISREG"
+
+    export WHITELIST="$authorized $my_funcs $keywords $macros"
+
+    echo "$files_list" | tr '\n' '\0' | xargs -0 perl -0777 -e '
+        my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST});
+        my $allow_mlx = $ENV{ALLOW_MLX};
+        my $found = 0;
+
+        foreach my $file (@ARGV) {
+            if ($allow_mlx == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
+                next;
+            }
+
+            open(my $fh, "<", $file) or next;
+            my $content = do { local $/; <$fh> };
+            close($fh);
+
+            $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
+            $content =~ s{//.*}{}g;
+            $content =~ s{("(?:\\.|[^"\\])*")}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
+            $content =~ s{(\x27(?:\\.|[^\x27\\])*\x27)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
+
+            my @lines = split(/\n/, $content);
+            for (my $i = 0; $i < @lines; $i++) {
+                my $line = $lines[$i];
+
+                while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
+                    my $fname = $1;
+
+                    next if length($fname) <= 2;
+                    next if $safe{$fname};
+                    next if ($allow_mlx == 1 && $fname =~ /^mlx_/);
+
+                    my $clean_file = $file;
+                    $clean_file =~ s|^\./||;
+
+                    printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                    $found = 1;
+                }
+            }
+        }
+        if (!$found) { print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n"; }
+    '
+
+    echo -e "\n${GREEN}Source audit complete.${NC}"
+    exit 0
+}
+
+extract_undefined_symbols() {
+    raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
+
+    NM_RAW_DATA=$(find . -not -path '*/.*' -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 -P4 nm -A 2>/dev/null)
+    ALL_UNDEFINED=$(grep " U " <<< "$NM_RAW_DATA")
+    MY_DEFINED=$(grep -E ' [TRD] ' <<< "$NM_RAW_DATA" | awk '{print $NF}' | sort -u)
+}
+
+filter_forbidden_functions() {
+    local func
+    forbidden_list=""
+
+    while read -r func; do
+        [ -z "$func" ] && continue
+        [[ "$func" =~ ^(_|ITM|edata|end|bss_start) ]] && continue
+
+        # Library Filters (MLX / Math)
+        [ "$USE_MLX" = true ] && [[ "$func" =~ ^(X|shm|gethostname|puts|exit|strerror) ]] && continue
+        [ "$USE_MATH" = true ] && [[ "$func" =~ ^(abs|cos|sin|sqrt|pow|exp|log|fabs|floor)f?$ ]] && continue
+
+        # Ignore if defined by user in the project
+        grep -qx "$func" <<< "$MY_DEFINED" && continue
+
+        if grep -qx "$func" <<< "$AUTH_FUNCS"; then
+            [ "$SHOW_ALL" = true ] && printf "   [${GREEN}OK${NC}]         -> %s\n" "$func"
+        else
+            if grep -qE " U ${func}$" <<< "$ALL_UNDEFINED"; then
+                forbidden_list+="${func} "
+            fi
+        fi
+    done <<< "$raw_funcs"
+}
+
+print_analysis_report() {
+    local f_name safe_name grep_res specific_locs errors=0
+    grep_res=""
+
+    # 1. Pre-scan locations with grep
+    for f_name in $forbidden_list; do
+        safe_name=$(printf '%s\n' "$f_name" | sed 's/[.[\*^$]/\\&/g')
+        if [ -n "$SPECIFIC_FILES" ]; then
+            local include_flags="" f f_escaped FILES_ARRAY
+            IFS=' ' read -ra FILES_ARRAY <<< "$SPECIFIC_FILES"
+            for f in "${FILES_ARRAY[@]}"; do
+                f_escaped=$(printf '%s\n' "$f" | sed 's/[[\.*^$/]/\\&/g')
+                include_flags+=" --include=\"$f_escaped\""
+            done
+            grep_res+=$(grep -rHE "\b${safe_name}\b" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
+        else
+            grep_res+=$(grep -rHE "\b${safe_name}\b" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
+        fi
+    done
+
+    # 2. Detailed Display
+    for f_name in $forbidden_list; do
+        specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
+        if [ -n "$specific_locs" ]; then
+            printf "   [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
+            [ -z "$SPECIFIC_FILES" ] && errors=$((errors + 1))
+
+            while read -r line; do
+                [ -z "$line" ] && continue
+                local f_path=$(echo "$line" | cut -d: -f1)
+                local l_num=$(echo "$line" | cut -d: -f2)
+                local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
+
+                if clean_code_snippet "$snippet" "$f_name" > /dev/null; then
+                    local display_name=$( [ "$FULL_PATH" = true ] && echo "$f_path" | sed 's|^\./||' || basename "$f_path" )
+                    local loc_prefix=$( [ -n "$SPECIFIC_FILES" ] && [ "$VERBOSE" = false ] && echo "line ${l_num}" || echo "${display_name}:${l_num}" )
+
+                    if [ "$VERBOSE" = true ]; then
+                        echo -e "          ${YELLOW}↳ Location: ${BLUE}${loc_prefix}${NC}: ${CYAN}$(crop_line "$f_name" "$snippet")${NC}"
+                    else
+                        echo -e "          ${YELLOW}↳ Location: ${BLUE}${loc_prefix}${NC}"
+                    fi
+                fi
+            done <<< "$specific_locs"
+        elif [ -z "$SPECIFIC_FILES" ]; then
+            # Warning block (Found in binary but not in .c)
+            printf "   [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
+            local objects=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
+            echo -ne "          ${YELLOW}↳ Found in objects: ${BLUE}${objects}${NC}"
+            [[ "$f_name" =~ ^(strlen|memset|memcpy|printf|puts|putchar)$ ]] && echo -e " ${CYAN}(Builtin?)${NC}" || echo -e " ${CYAN}(Sync?)${NC}"
+        fi
+    done
+    return $errors
+}
+
+run_analysis() {
+    extract_undefined_symbols
+    filter_forbidden_functions
+
+    print_analysis_report
+    local total_errors=$?
+
+    if [ $total_errors -eq 0 ] && [ -z "$forbidden_list" ]; then
+        echo -e "\t${GREEN}No forbidden functions detected.${NC}"
+    fi
+
+    return $total_errors
+}
+
+check_binary_cache() {
+    local cache_file current_src_data current_src_lines bin_mtime target_name
+    local ref_data ref_lines ref_size ref_bin_date diff_size abs_diff tmp_file target_name_escaped
+
+    cache_file="$INSTALL_DIR/.forb_cache"
+    mkdir -p "$INSTALL_DIR"
+    [ ! -f "$cache_file" ] && touch "$cache_file"
+
+    current_src_data=$(find . -name "*.c" -not -path '*/.*' -type f -exec stat -c "%s" {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+    current_src_lines=$(find . -name "*.c" -not -path '*/.*' -type f -exec wc -l {} + 2>/dev/null | awk '{s+=$1} END {print s}')
+    bin_mtime=$(stat -c %Y "$TARGET" 2>/dev/null)
+    target_name=$(basename "$TARGET")
+
+    ref_data=$(grep "^$(printf '%s\n' "$target_name" | sed 's/[.[\*^$/]/\\&/g'):" "$cache_file" 2>/dev/null)
+    ref_lines=$(echo "$ref_data" | cut -d: -f2)
+    ref_size=$(echo "$ref_data" | cut -d: -f3)
+    ref_bin_date=$(echo "$ref_data" | cut -d: -f4)
+
+    if [[ "$bin_mtime" != "$ref_bin_date" ]]; then
+        tmp_file=$(mktemp)
+        grep -v "^${target_name}:" "$cache_file" > "$tmp_file"
+        mv "$tmp_file" "$cache_file"
+        target_name_escaped=$(printf '%s\n' "$target_name" | sed 's/:/\\:/g')
+        echo "${target_name_escaped}:$current_src_lines:$current_src_data:$bin_mtime" >> "$cache_file"
+        SET_WARNING=false
+    else
+        diff_size=$((current_src_data - ref_size))
+        abs_diff=${diff_size#-}
+
+        if [[ "$current_src_lines" != "$ref_lines" ]] || [[ "$abs_diff" -gt 2 ]]; then
+            SET_WARNING=true
+        else
+            SET_WARNING=false
+        fi
+    fi
+}
+
+
+# ==============================================================================
+#  SECTION 5: MAINTENANCE & HELPERS
+# ==============================================================================
 
 show_help() {
     echo -e "${BOLD}ForbCheck v$VERSION${NC}"
@@ -60,323 +670,56 @@ show_help() {
     exit 0
 }
 
-version_to_int() {
-    echo "$1" | sed 's/v//' | awk -F. '{ printf("%d%03d%03d\n", $1,$2,$3); }'
-}
-
-get_user_defined_funcs() {
-    local files=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
-    [ -z "$files" ] && return
-
-    perl -0777 -ne '
-        s/\/\*.*?\*\///gs;
-        s/\/\/.*//g;
-        while (/\b([a-zA-Z_]\w*)\s*(\((?:[^()]++|(?2))*\))\s*\{/gs) {
-            print "$1\n";
-        }
-    ' $files 2>/dev/null | grep -vE "^(if|while|for|switch|else|return)$" | sort -u | tr '\n' ' '
-}
-
-select_preset() {
-    if [ "$DISABLE_AUTO" != "true" ]; then
-        local current_dir=$(basename "$PWD")
-        local current_dir_lower=$(echo "$current_dir" | tr '[:upper:]' '[:lower:]')
-        for preset_file in "$PRESET_DIR"/*.preset; do
-            [ -e "$preset_file" ] || continue
-            local base_name=$(basename "$preset_file" .preset)
-            local base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
-
-            if [ "$current_dir_lower" == "$base_name_lower" ]; then
-                echo -e "${CYAN}Auto-detected project: ${BOLD}${base_name}${NC}"
-                export SELECTED_PRESET="$base_name"
-                return 0
-            fi
-        done
-        for preset_file in "$PRESET_DIR"/*.preset; do
-            [ -e "$preset_file" ] || continue
-            local base_name=$(basename "$preset_file" .preset)
-            local base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
-
-            if [[ "$current_dir_lower" == *"$base_name_lower"* ]]; then
-                echo -e "${CYAN}Smart-detected project: ${BOLD}${base_name}${NC} (from folder '${current_dir}')"
-                export SELECTED_PRESET="$base_name"
-                return 0
-            fi
-        done
-    fi
-    [ "$DISABLE_AUTO" == "true" ] && echo -e "\n${YELLOW}${BOLD}Auto-detection disabled by --no-auto flag.${NC}"
-    echo -e "${CYAN}${BOLD}Select a project preset:${NC}"
-
-    local presets=($(ls "$PRESET_DIR" 2>/dev/null | grep '\.preset$' | sed 's/\.preset//'))
-
-    if [ ${#presets[@]} -eq 0 ]; then
-        echo -e "${RED}Error: No presets found in $PRESET_DIR.${NC}"
-        exit 1
-    fi
-    PS3=$'\n\033[1;36mEnter the number of your preset: \033[0m'
-    select choice in "${presets[@]}"; do
-        if [ -n "$choice" ]; then
-            export SELECTED_PRESET="$choice"
-            echo -e "${GREEN}Loaded preset: ${BOLD}$SELECTED_PRESET${NC}"
-            break
-        else
-            echo -e "${RED}Invalid selection. Please enter a valid number.${NC}"
-        fi
-    done
-}
-
-source_scan() {
-    select_preset
-    load_preset "$SELECTED_PRESET" || { echo -e "${RED}Error: Preset not found.${NC}"; exit 1; }
-
-    local files_list=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
-    local nb_files=$(echo "$files_list" | wc -l | tr -d ' ')
-    [ "$nb_files" -eq 0 ] && exit 1
-
-    echo -e "${BLUE}Building compiler-grade function shield...${NC}"
-    local my_funcs=$(get_user_defined_funcs)
-
-    echo -e "${BLUE}Scanning $nb_files source files...${NC}\n"
-
-    local authorized=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr '\n' ' ')
-
-    export ALLOW_MLX=0
-    if [[ "$authorized" == *"ALL_MLX"* ]]; then
-        export ALLOW_MLX=1
-    fi
-
-    if [[ "$authorized" == *"ALL_MATH"* ]]; then
-        local math_funcs="cos sin tan acos asin atan atan2 cosh sinh tanh exp frexp ldexp log log10 modf pow sqrt ceil fabs floor fmod round trunc abs labs"
-        authorized="$authorized $math_funcs"
-    fi
-
-    local keywords="if while for return sizeof switch else case default do static const volatile struct union enum typedef extern inline unsigned signed short long int char float double void bool va_arg va_start va_end va_list NULL del f"
-    local macros="WIFEXITED WEXITSTATUS WIFSIGNALED WTERMSIG S_ISDIR S_ISREG"
-
-    export WHITELIST="$authorized $my_funcs $keywords $macros"
-    echo "$files_list" | tr '\n' '\0' | xargs -0 perl -0777 -e '
-        my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST});
-        my $allow_mlx = $ENV{ALLOW_MLX};
-        my $found = 0;
-
-        foreach my $file (@ARGV) {
-            # MODIFICATION ICI : On passe au fichier suivant si c est un fichier source de la MLX
-            if ($allow_mlx == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
-                next;
-            }
-
-            open(my $fh, "<", $file) or next;
-            my $content = do { local $/; <$fh> };
-            close($fh);
-
-            # Nettoyage
-            $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
-            $content =~ s{//.*}{}g;
-            $content =~ s{("(?:\\.|[^"\\])*")}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
-            $content =~ s{(\x27(?:\\.|[^\x27\\])*\x27)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
-
-            my @lines = split(/\n/, $content);
-            for (my $i = 0; $i < @lines; $i++) {
-                my $line = $lines[$i];
-
-                while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
-                    my $fname = $1;
-
-                    next if length($fname) <= 2;
-                    next if $safe{$fname};
-
-                    # MODIFICATION ICI : On pardonne les appels mlx_ dans TES fichiers
-                    next if ($allow_mlx == 1 && $fname =~ /^mlx_/);
-
-                    my $clean_file = $file;
-                    $clean_file =~ s|^\./||;
-
-                    printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
-                    $found = 1;
-                }
-            }
-        }
-        if (!$found) { print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n"; }
-    '
-
-    echo -e "\n${GREEN}Source audit complete.${NC}"
-    exit 0
-}
-
-load_preset() {
-    local target_name="$1"
-
-    mkdir -p "$PRESET_DIR"
-    AUTH_FILE="$PRESET_DIR/${target_name}.preset"
-
-    if [ ! -f "$AUTH_FILE" ]; then
-        echo -e "\033[31mError: No preset found for '${target_name}'.\033[0m"
-        local available_presets
-        available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
-        if [ -z "$available_presets" ]; then
-            echo -e "\033[33mNo presets available.\033[0m"
-        else
-            echo -e "Available presets: \033[36m$available_presets\033[0m"
-        fi
-        exit 1
-    fi
-}
-
-list_presets() {
-    local should_exit="${1:-1}"
-    mkdir -p "$PRESET_DIR"
-    local available_presets
-    available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
-    if [ -z "$available_presets" ]; then
-        echo -e "\033[33mNo presets available in $PRESET_DIR\033[0m"
-    else
-        echo -e "Available presets: \033[36m$available_presets\033[0m"
-    fi
-    if [ "$should_exit" -eq 1 ]; then
-        exit 0
-    fi
-}
-
-get_presets() {
-    if [[ "$1" == "manual" ]]; then
-        echo -ne "${YELLOW}${BOLD}Warning: This will download default presets. Any existing preset with the same name will be overwritten. Continue? (y/n): ${NC}"
-        read -r choice
-        case "$choice" in
-            [yY][eE][sS]|[yY]) ;;
-            *)
-                echo -e "${BLUE}Operation aborted.${NC}"
-                exit 0
-                ;;
-        esac
-    fi
-
-    echo -e "${BLUE}Downloading default presets from GitHub...${NC}"
-    mkdir -p "$PRESET_DIR"
-    if curl -sL "https://github.com/Mrdolls/forbCheck/archive/refs/heads/main.tar.gz" | tar -xz -C /tmp "forbCheck-main/presets" 2>/dev/null; then
-
-        if [[ "$1" == "manual" ]]; then
-            cp -r /tmp/forbCheck-main/presets/* "$PRESET_DIR/" 2>/dev/null
-            echo -e "${GREEN}[✔] Default presets successfully restored!${NC}"
-        else
-            local added=0
-            for preset in /tmp/forbCheck-main/presets/*; do
-                local base_name=$(basename "$preset")
-                if [ ! -f "$PRESET_DIR/$base_name" ]; then
-                    cp "$preset" "$PRESET_DIR/"
-                    added=$((added + 1))
-                fi
-            done
-
-            if [ $added -gt 0 ]; then
-                echo -e "${GREEN}[✔] Added $added new preset(s) during update!${NC}"
-            else
-                echo -e "${GREEN}[✔] Presets checked (no user modifications overwritten).${NC}"
-            fi
-        fi
-        rm -rf "/tmp/forbCheck-main"
-    else
-        echo -e "${RED}[✘] Error: Failed to download presets. Check your connection.${NC}"
-    fi
-    if [[ "$1" == "manual" ]]; then
-        exit 0
-    fi
-}
-
-open_presets() {
-    mkdir -p "$PRESET_DIR"
-    echo -e "\033[32mOpening presets directory: $PRESET_DIR\033[0m"
-    if command -v explorer.exe > /dev/null; then
-        (cd "$PRESET_DIR" && explorer.exe .)
-    elif command -v xdg-open > /dev/null; then
-        xdg-open "$PRESET_DIR"
-    elif command -v open > /dev/null; then
-        open "$PRESET_DIR"
-    else
-        echo -e "\033[31mError: Could not open the folder automatically. You can find it at: $PRESET_DIR\033[0m"
-    fi
-    exit 0
-}
-
-create_preset() {
-    mkdir -p "$PRESET_DIR"
-    echo -ne "${BLUE}${BOLD}Enter the name of the new preset (e.g., minishell): ${NC}"
-    read -r preset_name
-    if [ -z "$preset_name" ]; then
-        echo -e "${RED}Error: Preset name cannot be empty.${NC}"
-        exit 1
-    fi
-    preset_name=$(echo "$preset_name" | tr ' ' '-')
-
-    local new_file="$PRESET_DIR/${preset_name}.preset"
-    if [ -f "$new_file" ]; then
-        echo -e "${YELLOW}Preset '${preset_name}' already exists. Opening it for edition...${NC}"
-    else
-        echo -e "${GREEN}Creating new preset '${preset_name}'...${NC}"
-        touch "$new_file"
-    fi
-    command -v code &>/dev/null && code --wait "$new_file" || vim "$new_file" || nano "$new_file"
-
-    echo -e "${GREEN}[✔] Preset '${preset_name}' saved!${NC}"
-    exit 0
-}
-
-remove_preset() {
-    list_presets 0
-    echo -ne "\n${BLUE}${BOLD}Enter the name of the preset to remove: ${NC}"
-    read -r preset_name
-    if [ -z "$preset_name" ]; then
-        echo -e "${RED}Error: Preset name cannot be empty.${NC}"
-        exit 1
-    fi
-    local target_file="$PRESET_DIR/${preset_name}.preset"
-    if [ ! -f "$target_file" ]; then
-        echo -e "${RED}Error: Preset '${preset_name}' does not exist.${NC}"
-        exit 1
-    fi
-    echo -ne "${YELLOW}Are you sure you want to delete '${preset_name}'? (y/n): ${NC}"
-    read -r confirm
-    case "$confirm" in
-        [yY][eE][sS]|[yY])
-            rm -f "$target_file"
-            echo -e "${GREEN}[✔] Preset '${preset_name}' has been removed.${NC}"
-            ;;
-        *)
-            echo -e "${BLUE}Deletion aborted.${NC}"
-            ;;
-    esac
-    exit 0
-}
-
-edit_list() {
-    [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
-    command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE" || nano "$AUTH_FILE"; exit 0
-}
-
 update_script() {
-    echo -e "${C_BLUE}Checking for updates...${RC}"
-    local raw_url="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
     local tmp_file="/tmp/forb_update.sh"
-    if curl -sL "$raw_url" -o "$tmp_file"; then
-        local remote_version=$(grep "^VERSION=" "$tmp_file" | cut -d'"' -f2)
+    local remote_version
+
+    echo -e "${BLUE}Checking for updates...${NC}"
+
+    if curl -sL "$UPDATE_URL" -o "$tmp_file"; then
+        remote_version=$(grep "^VERSION=" "$tmp_file" | cut -d'"' -f2)
         if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
-            echo -e "${YELLOW}New version found: $remote_version Updating...${RC}"
+            echo -e "${YELLOW}New version found: $remote_version Updating...${NC}"
             mv "$tmp_file" "$0"
             chmod +x "$0"
             get_presets
-            echo -e "${GREEN}ForbCheck has been updated to $remote_version!${RC}"
+            echo -e "${GREEN}ForbCheck has been updated to $remote_version!${NC}"
             exit 0
         else
-            echo -e "${GREEN}ForbCheck is already up to date ($VERSION).${RC}"
+            echo -e "${GREEN}ForbCheck is already up to date ($VERSION).${NC}"
             rm -f "$tmp_file"
         fi
     else
-        echo -e "${RED}Error: Failed to download update from GitHub.${RC}"
+        echo -e "${RED}Error: Failed to download update from GitHub.${NC}"
         return 1
     fi
     exit 0
 }
 
+auto_check_update() {
+    local remote_version choice
+
+    # Silent curl with 1-second timeout to prevent lag
+    remote_version=$(curl -s --max-time 1 "$UPDATE_URL" | grep "^VERSION=" | head -n 1 | cut -d'"' -f2)
+
+    if [ -n "$remote_version" ]; then
+        if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
+            echo -ne "${YELLOW}New version of ForbCheck (v${remote_version}) is available! Update now? (y/n): ${NC}"
+            read -r choice
+            case "$choice" in
+                [yY][eE][sS]|[yY])
+                    update_script
+                    ;;
+                *)
+                    echo -e "${BLUE}Update skipped. Starting analysis...${NC}\n"
+                    ;;
+            esac
+        fi
+    fi
+}
+
 uninstall_script() {
+    local choice
     echo -ne "${RED}${BOLD}Warning: You are about to uninstall ForbCheck. All configurations will be lost. Continue? (y/n): ${NC}"
     read -r choice
     case "$choice" in
@@ -394,243 +737,28 @@ uninstall_script() {
     esac
 }
 
-crop_line() {
-    local func=$1; local code=$2
-    if [ ${#code} -gt 65 ]; then
-        echo "$code" | awk -v f="$func" '{
-            pos = index($0, f);
-            start = (pos > 20) ? pos - 20 : 0;
-            print "..." substr($0, start, 60) "..."
-        }'
-    else
-        echo "$code"
-    fi
-}
-auto_detect_libraries() {
-    [ "$DISABLE_AUTO" = true ] && return
-    [ "$USE_MLX" = true ] && return
+check_dependencies() {
+    local missing_deps=0
+    local deps=("nm" "perl" "curl" "tar" "bc")
 
-    if ls -R . 2>/dev/null | grep -qiE "mlx|minilibx" || [ -f "libmlx.a" ] || \
-        nm "$TARGET" 2>/dev/null | grep -qiE "mlx_"; then
-        USE_MLX=true
-        echo -e "${CYAN}[Auto-Detect] MiniLibX detected (Use --no-auto to scan everything)${NC}"
-    fi
-    if [ "$USE_MATH" = false ] && [ -n "$TARGET" ]; then
-        if grep -qE "\-lm\b" Makefile 2>/dev/null || \
-           nm -u "$TARGET" 2>/dev/null | grep -qE "\b(sin|cos|sqrt|pow|exp|atan2)f?\b"; then
-            USE_MATH=true
-            echo -e "${CYAN}[Auto-Detect] Math library detected (Use --no-auto to scan everything)${NC}"
+    for cmd in "${deps[@]}"; do
+        if ! command -v "$cmd" &> /dev/null; then
+            echo -e "${RED}[✘] Error: Required command '${BOLD}$cmd${NC}${RED}' is not installed.${NC}"
+            missing_deps=$((missing_deps + 1))
         fi
-    fi
-}
-
-show_list() {
-    local should_exit="${1:-1}"
-    if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
-        echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
-        exit 0
-    fi
-    if [ $# -gt 0 ]; then
-        echo -e "${BLUE}${BOLD}Checking functions:${NC}"
-        for f in "$@"; do
-            if grep -qFx "$f" <<< "$AUTH_FUNCS"; then
-                echo -e "   [${GREEN}OK${NC}] -> $f"
-            else
-                echo -e "   [${RED}KO${NC}] -> $f"
-            fi
-        done
-    else
-        if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
-            echo -e "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
-        else
-            echo -e "${BLUE}${BOLD}Authorized functions (Default):${NC} ${CYAN}(Use -e to edit)${NC}"
-            echo "---------------------------------------"
-            tr ',' '\n' < "$AUTH_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | column -c 80
-        fi
-    fi
-    if [ "$should_exit" -eq 1 ]; then
-        exit 0
-    fi
-}
-
-process_list() {
-    local check_args=""
-    while [[ $# -gt 0 && ! $1 =~ ^- ]]; do
-        check_args+="$1 "
-        shift
     done
-    if [ ! -f "$AUTH_FILE" ]; then
-        mkdir -p "$(dirname "$AUTH_FILE")"
-        touch "$AUTH_FILE"
-    fi
-    if [ -L "$AUTH_FILE" ]; then
-        echo "Error: AUTH_FILE must be a regular file, not a symlink"
+
+    if [ "$missing_deps" -gt 0 ]; then
+        echo -e "${YELLOW}Please install the missing packages to use ForbCheck.${NC}"
         exit 1
     fi
-    AUTH_FUNCS=$(tr ',' ' ' < "$AUTH_FILE" 2>/dev/null | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-    show_list $check_args
 }
 
-clean_code_snippet() {
-    local snippet="$1"
-    local f_name="$2"
-    snippet=$(echo "$snippet" | sed 's|//.*||')
-    snippet=$(echo "$snippet" | sed 's|/\*.*\*/||g')
-    if echo "$snippet" | grep -qE "\b${f_name}\b"; then
-        echo "$snippet"
-        return 0
-    else
-        return 1
-    fi
-}
+# ==============================================================================
+#  SECTION 6: MAIN DISPATCHER & EXECUTION
+# ==============================================================================
 
-auto_detect_target() {
-    if [ -f "Makefile" ]; then
-        local make_target=$(grep -m 1 -E "^NAME[[:space:]]*=" Makefile | cut -d '=' -f2 | tr -d ' ' | tr -d '"' | tr -d "'")
-        if [ -n "$make_target" ] && [ -f "$make_target" ] && nm "$make_target" &>/dev/null; then
-            TARGET="$make_target"
-            echo -e "${CYAN}[Auto-Detect] Target found via Makefile: $TARGET${NC}"
-            return 0
-        fi
-    fi
-    local fallback_targets=$(find . -maxdepth 1 -type f -executable ! -name "*.sh" ! -name ".*" -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2 | sed 's|^\./||')
-
-    for fallback_target in $fallback_targets; do
-        if [ -n "$fallback_target" ] && [ -f "$fallback_target" ] && nm "$fallback_target" &>/dev/null; then
-            TARGET="$fallback_target"
-            echo -e "${CYAN}[Auto-Detect] Target found via file search: $TARGET${NC}"
-            return 0
-        fi
-    done
-
-    return 1
-}
-
-run_analysis() {
-    cache_file="$INSTALL_DIR/.forb_cache"
-    mkdir -p "$INSTALL_DIR"
-    [ ! -f "$cache_file" ] && touch "$cache_file"
-    local raw_funcs=$(nm -u "$TARGET" 2>/dev/null | awk '{print $NF}' | sed -E 's/@.*//' | sort -u)
-    local forbidden_list=""
-    local errors=0
-
-    local single_file_mode=false
-    if [ -n "$SPECIFIC_FILES" ] && [ $(echo "$SPECIFIC_FILES" | wc -w) -eq 1 ]; then
-        single_file_mode=true
-    fi
-    while read -r func; do
-        [ -z "$func" ] && continue
-        [[ "$func" =~ ^(_|ITM|edata|end|bss_start) ]] && continue
-        [ "$USE_MLX" = true ] && [[ "$func" =~ ^(X|shm|gethostname|puts|exit|strerror) ]] && continue
-        [ "$USE_MATH" = true ] && [[ "$func" =~ ^(abs|cos|sin|sqrt|pow|exp|log|fabs|floor)f?$ ]] && continue
-
-        grep -qx "$func" <<< "$MY_DEFINED" && continue
-
-        if grep -qx "$func" <<< "$AUTH_FUNCS"; then
-            [ "$SHOW_ALL" = true ] && printf "   [${GREEN}OK${NC}]         -> %s\n" "$func"
-        else
-            if grep -qE " U ${func}$" <<< "$ALL_UNDEFINED"; then
-                forbidden_list+="${func} "
-                if [ -z "$SPECIFIC_FILES" ]; then errors=$((errors + 1)); fi
-            fi
-        fi
-    done <<< "$raw_funcs"
-    local grep_res=""
-
-        if [ -n "$SPECIFIC_FILES" ]; then
-            local include_flags=""
-            IFS=' ' read -ra FILES_ARRAY <<< "$SPECIFIC_FILES"
-        for f in "${FILES_ARRAY[@]}"; do
-            if [[ "$f" =~ \.\. ]] || [[ "$f" =~ ^/ ]]; then
-                echo "Error: Invalid file path: $f"
-                exit 1
-            fi
-            f_escaped=$(printf '%s\n' "$f" | sed 's/[[\.*^$/]/\\&/g')
-            include_flags+=" --include=\"$f_escaped\""
-        done
-
-            for f_name in $forbidden_list; do
-            grep_res+=$(grep -rHE \"\\b${f_name}\\b\" . $include_flags -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
-            done
-    else
-        for f_name in $forbidden_list; do
-            grep_res+=$(grep -rHE "\b${f_name}\b" . --include="*.c" -n 2>/dev/null | grep -vE "mlx|MLX")$'\n'
-        done
-    fi
-        for f_name in $forbidden_list; do
-            local specific_locs=$(grep -E ":.*\b${f_name}\b" <<< "$grep_res")
-
-        if [ -n "$specific_locs" ]; then
-            printf "   [${RED}FORBIDDEN${NC}] -> %s\n" "$f_name"
-            [ -n "$SPECIFIC_FILES" ] && errors=$((errors + 1))
-
-            while read -r line; do
-                [ -z "$line" ] && continue
-                local f_path=$(echo "$line" | cut -d: -f1)
-                local l_num=$(echo "$line" | cut -d: -f2)
-                local snippet=$(echo "$line" | cut -d: -f3- | sed 's/^[[:space:]]*//')
-
-                if ! clean_code_snippet "$snippet" "$f_name" > /dev/null; then
-                        continue
-                fi
-                local clean_snippet=$(clean_code_snippet "$snippet" "$f_name")
-                local display_name=$( [ "$FULL_PATH" = true ] && echo "$f_path" | sed 's|^\./||' || basename "$f_path" )
-
-                local loc_prefix=$( [ "$single_file_mode" = true ] && [ "$VERBOSE" = false ] && echo "line ${l_num}" || echo "${display_name}:${l_num}" )
-
-                if [ "$VERBOSE" = true ]; then
-                    local s_crop=$(crop_line "$f_name" "$snippet")
-                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${loc_prefix}${NC}: ${CYAN}${s_crop}${NC}"
-                else
-                    echo -e "          ${YELLOW}↳ Location: ${BLUE}${loc_prefix}${NC}"
-                fi
-            done <<< "$specific_locs"
-
-        elif [ -z "$SPECIFIC_FILES" ]; then
-            printf "   [${YELLOW}WARNING${NC}]   -> %s\n" "$f_name"
-
-            local files=$(grep -E " U ${f_name}$" <<< "$ALL_UNDEFINED" | awk -F: '{split($1, path, "/"); print path[length(path)]}' | sort -u | tr '\n' ' ')
-            echo -ne "          ${YELLOW}↳ Found in objects: ${BLUE}${files}${NC}"
-
-            if [[ "$f_name" =~ ^(strlen|memset|memcpy|printf|puts|putchar)$ ]]; then
-                echo -e " ${CYAN}(Use -fno-builtin in your gcc flags to silence this)${NC}"
-            else
-                echo -e " ${CYAN}(Recompile to sync binary)${NC}"
-            fi
-        fi
-    done
-    if [ $errors -eq 0 ] && [ "$forbidden_list" = "" ]; then
-        echo -e "\t${GREEN}No forbidden functions detected.${NC}"
-    fi
-    return $errors
-}
-
-auto_check_update() {
-    local raw_url="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
-
-    # Silent curl with 1-second timeout to prevent lag
-    local remote_version
-    remote_version=$(curl -s --max-time 1 "$raw_url" | grep "^VERSION=" | head -n 1 | cut -d'"' -f2)
-
-    # If a version was successfully fetched
-    if [ -n "$remote_version" ]; then
-        if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
-            echo -ne "${YELLOW}New version of ForbCheck (v${remote_version}) is available! Update now? (y/n): ${NC}"
-            read -r choice
-            case "$choice" in
-                [yY][eE][sS]|[yY])
-                    update_script
-                    ;;
-                *)
-                    echo -e "${BLUE}Update skipped. Starting analysis...${NC}\n"
-                    ;;
-            esac
-        fi
-    fi
-}
-
-# --- MAIN ---
-
+# 1. Pre-process arguments (handle split/combined flags)
 args=()
 for arg in "$@"; do
     if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" || "$arg" == "-op" || "$arg" == "-lp" || "$arg" == "-cp" || "$arg" == "-rp" || "$arg" == "-gp" || "$arg" == "-np" ]]; then
@@ -647,6 +775,7 @@ for arg in "$@"; do
 done
 set -- "${args[@]}"
 
+# 2. Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help) show_help ;;
@@ -675,11 +804,15 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-SET_WARNING=false
+check_dependencies
+
+# 3. Print Banner
 clear -x
 echo -e "${YELLOW}╔═════════════════════════════════════╗${NC}"
 echo -e "${YELLOW}║              ForbCheck              ║${NC}"
 echo -e "${YELLOW}╚═════════════════════════════════════╝${NC}"
+
+# 4. Target Validation & Fallback
 if [ -z "$TARGET" ]; then
     auto_detect_target
 
@@ -697,42 +830,12 @@ if ! nm "$TARGET" &>/dev/null; then
     exit 1
 fi
 
-if [ -n "$TARGET" ]; then
-    auto_check_update
-fi
-if [ -f "$TARGET" ]; then
-    cache_file="$INSTALL_DIR/.forb_cache"
-    mkdir -p "$INSTALL_DIR"
-    [ ! -f "$cache_file" ] && touch "$cache_file"
-    current_src_data=$(find . -name "*.c" -not -path '*/.*' -type f -exec stat -c "%s" {} + 2>/dev/null | awk '{s+=$1} END {print s}')
-    current_src_lines=$(find . -name "*.c" -not -path '*/.*' -type f -exec wc -l {} + 2>/dev/null | awk '{s+=$1} END {print s}')
-    bin_mtime=$(stat -c %Y "$TARGET" 2>/dev/null)
-    target_name=$(basename "$TARGET")
-     cache_file="$INSTALL_DIR/.forb_cache"
-    ref_data=$(grep "^$(printf '%s\n' "$target_name" | sed 's/[.[\*^$/]/\\&/g'):" "$cache_file" 2>/dev/null)
-    ref_lines=$(echo "$ref_data" | cut -d: -f2)
-    ref_size=$(echo "$ref_data" | cut -d: -f3)
-    ref_bin_date=$(echo "$ref_data" | cut -d: -f4)
-    if [[ "$bin_mtime" != "$ref_bin_date" ]]; then
-        tmp_file=$(mktemp)
-        grep -v "^${target_name}:" "$cache_file" > "$tmp_file"
-        mv "$tmp_file" "$cache_file"
-        target_name_escaped=$(printf '%s\n' "$target_name" | sed 's/:/\\:/g')
-        echo "${target_name_escaped}:$current_src_lines:$current_src_data:$bin_mtime" >> "$cache_file"
-        SET_WARNING=false
-    else
-        diff_size=$((current_src_data - ref_size))
-        abs_diff=${diff_size#-}
-
-        if [[ "$current_src_lines" != "$ref_lines" ]] || [[ "$abs_diff" -gt 2 ]]; then
-            SET_WARNING=true
-        else
-            SET_WARNING=false
-        fi
-    fi
-fi
+# 5. Pre-run Setup (Updates, Cache, Libraries)
+auto_check_update
+check_binary_cache
 auto_detect_libraries
-START_TIME=$(date +%s.%N)
+
+# 6. Load Presets
 if [ "$USE_PRESET" -eq 0 ] && [ "$DISABLE_PRESET" = false ] && [ -n "$TARGET" ]; then
     target_name=$(basename "$TARGET")
     if [ -f "$PRESET_DIR/${target_name}.preset" ]; then
@@ -752,16 +855,20 @@ else
     fi
 fi
 AUTH_FUNCS=$(cat "$AUTH_FILE" 2>/dev/null | tr ',' ' ' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-echo -e "${BLUE}Target bin:${NC} $TARGET\n"
 
+# 7. Print Execution Details
+echo -e "${BLUE}Target bin:${NC} $TARGET\n"
 if [ "$SET_WARNING" = true ]; then
-        echo -e "${YELLOW}Warning:${NC} Source content is newer than the binary."
-        echo -e "         The results might not reflect your latest changes."
-        echo -e "         Consider ${GREEN}recompiling${NC} to be sure."
+    echo -e "${YELLOW}Warning:${NC} Source content is newer than the binary."
+    echo -e "         The results might not reflect your latest changes."
+    echo -e "         Consider ${GREEN}recompiling${NC} to be sure."
 fi
 [ -n "$SPECIFIC_FILES" ] && echo -e "${BLUE}Scope      :${NC} $SPECIFIC_FILES"
 echo -e "${BLUE}${BOLD}Execution:${NC}"
 echo "-------------------------------------------------"
+
+# 8. Run Core Analysis
+START_TIME=$(date +%s.%N)
 
 NM_RAW_DATA=$(find . -not -path '*/.*' -type f \( -name "*.o" -o -name "*.a" \) ! -name "$TARGET" ! -path "*mlx*" ! -path "*MLX*" -print0 2>/dev/null | xargs -0 -P4 nm -A 2>/dev/null)
 ALL_UNDEFINED=$(grep " U " <<< "$NM_RAW_DATA")
@@ -770,8 +877,10 @@ MY_DEFINED=$(grep -E ' [TRD] ' <<< "$NM_RAW_DATA" | awk '{print $NF}' | sort -u)
 run_analysis
 total_errors=$?
 
+# 9. Print Results
 DURATION=$(echo "$(date +%s.%N) - $START_TIME" | bc 2>/dev/null || echo "0")
 echo -e "-------------------------------------------------\n"
+
 if [ $total_errors -eq 0 ]; then
     echo -ne "\t\t${GREEN}RESULT: PERFECT\n"
 else
