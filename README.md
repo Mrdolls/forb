@@ -25,6 +25,8 @@ ForbCheck uses two complementary approaches:
 - Auto-loads the correct preset from your folder name (case-insensitive, substring match)
 - Detects external libraries (MiniLibX, Math) and excludes their internal symbols automatically
 - Warns you if your source code is newer than your binary (stale binary detection)
+- **Blacklist Mode** — inverts the scan logic: all functions allowed except the ones you explicitly list
+- **Preset flags** — embed behavior directly inside `.preset` files (`BLACKLIST_MODE`, `ALL_MLX`, `ALL_MATH`)
 - JSON output mode for CI/CD integration
 - Preset system to manage authorized function lists per project
 
@@ -76,6 +78,7 @@ forb [options] [target] [-f <files...>]
 | | `-op, --open-presets` | Open the presets directory |
 | | `-rp, --remove-preset` | Delete an existing preset |
 | **Scan** | `-s, --source` | Deep scan source files for unauthorized C functions |
+| | `-b, --blacklist` | Force Blacklist Mode (hunt specific functions instead of using whitelist) |
 | | `-v` | Verbose: show source code context with highlighting |
 | | `-f <files...>` | Limit scan to specific files |
 | | `-p, --full-path` | Show full file paths |
@@ -121,6 +124,12 @@ forb --json minishell
 
 # Show execution time
 forb -t minishell
+
+# Blacklist mode: detect usage of specific forbidden functions
+forb -b -s
+
+# Blacklist mode via preset flag (see Preset Flags section)
+forb -s
 ```
 
 ---
@@ -157,6 +166,65 @@ forb -e
 
 ---
 
+## Preset Flags
+
+Presets now support embedded flags that configure ForbCheck's behavior without needing CLI options. Add them anywhere in the `.preset` file (outside of comments).
+
+| Flag | Description |
+| :--- | :--- |
+| `BLACKLIST_MODE` | Inverts the scan logic. **All functions are allowed** except the ones listed in the preset. Useful when you want to hunt specific forbidden calls rather than maintain a full whitelist. |
+| `ALL_MLX` | Automatically ignores MiniLibX internal functions (equivalent to `-mlx`). |
+| `ALL_MATH` | Automatically authorizes all standard `<math.h>` functions (`cos`, `sin`, `sqrt`, `pow`, etc.) and adds them to the authorized list (equivalent to `-lm`). |
+
+**Example preset using flags:**
+
+```text
+# my_project.preset
+
+BLACKLIST_MODE
+ALL_MLX
+ALL_MATH
+
+# Functions that are FORBIDDEN in this project (blacklist):
+system
+execve
+fork
+```
+
+When `BLACKLIST_MODE` is active, the list below the flags becomes a **blacklist** — ForbCheck will report any call to those functions, and allow everything else.
+
+When no flag is set (default), the list is a **whitelist** — ForbCheck reports anything *not* in the list.
+
+---
+
+## Blacklist Mode
+
+Blacklist Mode inverts ForbCheck's core logic:
+
+- **Default (Whitelist):** All functions are **forbidden** unless listed in your preset.
+- **Blacklist Mode:** All functions are **allowed** unless listed in your preset.
+
+This is useful for projects where the restriction is narrow — e.g., "no `system()` or `execve()`" — rather than maintaining an exhaustive authorized list.
+
+**Activate via CLI:**
+
+```bash
+forb -b -s
+```
+
+**Activate via preset flag** (persistent, no CLI flag needed):
+
+```text
+BLACKLIST_MODE
+
+system
+execve
+```
+
+Both methods work identically. The preset flag takes effect automatically when the preset is loaded.
+
+---
+
 ## Exit Codes
 
 | Code | Meaning |
@@ -171,6 +239,7 @@ forb -e
 - ForbCheck is an assistance tool, not a substitute for reading your project's subject carefully.
 - Results depend on the state of your compiled binary. If your source is newer than your binary, ForbCheck will warn you to recompile.
 - The `-s` deep scan operates on source files and is complementary to the binary analysis — both can catch different things.
+- In Blacklist Mode, the source scan (`-s`) uses a dedicated engine that reports only functions matching your blacklist, with exact file and line locations.
 
 ---
 
