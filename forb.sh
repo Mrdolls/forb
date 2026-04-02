@@ -539,23 +539,17 @@ parse_preset_flags() {
 scan_blacklist() {
     local files="$1"
     export BLACKLIST_FUNCS=$(echo "$AUTH_FUNCS" | tr '\n' ' ')
-    BLACKLIST_JSON_DATA=""
 
-    local raw_output
-    export ALLOW_MLX=0
-    [ "$USE_MLX" = true ] && export ALLOW_MLX=1
-    raw_output=$(echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
+    echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
         my %forbidden = map { $_ => 1 } split(" ", $ENV{BLACKLIST_FUNCS});
         my $found = 0;
 
         foreach my $file (@ARGV) {
-            if ($ENV{ALLOW_MLX} == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
-                next;
-            }
             open(my $fh, "<", $file) or next;
             my $content = do { local $/; <$fh> };
             close($fh);
 
+            # Nettoyage des commentaires et strings
             $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
             $content =~ s{//.*}{}g;
             $content =~ s{("(?:\\.|[^"\\])*")}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
@@ -564,36 +558,22 @@ scan_blacklist() {
             my @lines = split(/\n/, $content);
             for (my $i = 0; $i < @lines; $i++) {
                 my $line = $lines[$i];
+
                 while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
                     my $fname = $1;
+
+                    # Si la fonction est dans la blacklist -> ERREUR
                     if ($forbidden{$fname}) {
                         my $clean_file = $file;
                         $clean_file =~ s|^\./||;
-                        printf "MATCH -> %-15s in %s:%d\n", $fname, $clean_file, $i + 1;
+                        printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
                         $found = 1;
                     }
                 }
             }
         }
-        if (!$found) { print "OK\n"; }
-    ')
-
-    if [ "$USE_JSON" = true ]; then
-        JSON_RAW_DATA="$raw_output"
-    else
-        if echo "$raw_output" | grep -q "^OK$"; then
-            echo -e "  ${GREEN}[OK]${NC} No forbidden functions detected in blacklist mode."
-        else
-            echo "$raw_output" | while IFS= read -r line; do
-                [ -z "$line" ] && continue
-                local fname=$(echo "$line" | awk '{print $3}')
-                local loc=$(echo "$line"   | awk '{print $5}')
-                local fpath="${loc%:*}"
-                local lnum="${loc##*:}"
-                printf "  ${RED}[FORBIDDEN]${NC} -> ${BOLD}%-15s${NC} in ${BLUE}%s:%s${NC}\n" "$fname" "$fpath" "$lnum"
-            done
-        fi
-    fi
+        if (!$found) { print "  \033[32m[OK]\033[0m No forbidden functions detected in blacklist mode.\n"; }
+    '
 }
 
 scan_whitelist() {
@@ -607,8 +587,7 @@ scan_whitelist() {
 
     export WHITELIST="$(echo "$AUTH_FUNCS" | tr '\n' ' ') $user_funcs $keywords $macros"
 
-    local raw_output
-    raw_output=$(echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
+    echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
         my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST});
         my $allow_mlx = $ENV{ALLOW_MLX};
         my $found = 0;
@@ -621,6 +600,7 @@ scan_whitelist() {
             my $content = do { local $/; <$fh> };
             close($fh);
 
+            # Nettoyage des commentaires et strings
             $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
             $content =~ s{//.*}{}g;
             $content =~ s{("(?:\\.|[^"\\])*")}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
@@ -629,50 +609,31 @@ scan_whitelist() {
             my @lines = split(/\n/, $content);
             for (my $i = 0; $i < @lines; $i++) {
                 my $line = $lines[$i];
+
                 while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
                     my $fname = $1;
+
                     next if length($fname) <= 2;
                     next if $safe{$fname};
                     next if ($allow_mlx == 1 && $fname =~ /^mlx_/);
 
                     my $clean_file = $file;
                     $clean_file =~ s|^\./||;
-                    printf "MATCH -> %-15s in %s:%d\n", $fname, $clean_file, $i + 1;
+
+                    printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
                     $found = 1;
                 }
             }
         }
-        if (!$found) { print "OK\n"; }
-    ')
-
-    if [ "$USE_JSON" = true ]; then
-        JSON_RAW_DATA="$raw_output"
-    else
-        if echo "$raw_output" | grep -q "^OK$"; then
-            echo -e "  ${GREEN}[OK]${NC} No unauthorized functions detected."
-        else
-            echo "$raw_output" | while IFS= read -r line; do
-                [ -z "$line" ] && continue
-                local fname=$(echo "$line" | awk '{print $3}')
-                local loc=$(echo "$line"   | awk '{print $5}')
-                local fpath="${loc%:*}"
-                local lnum="${loc##*:}"
-                printf "  ${RED}[FORBIDDEN]${NC} -> ${BOLD}%-15s${NC} in ${BLUE}%s:%s${NC}\n" "$fname" "$fpath" "$lnum"
-            done
-        fi
-    fi
+        if (!$found) { print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n"; }
+    '
 }
 
 source_scan() {
     select_preset
     load_preset "$SELECTED_PRESET" || { log_info "${RED}Error: Preset not found.${NC}"; exit 1; }
 
-    local files_list
-    if [ -n "$SPECIFIC_FILES" ]; then
-        files_list="$SPECIFIC_FILES"
-    else
-        files_list=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
-    fi
+    local files_list=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
     local nb_files=$(echo "$files_list" | wc -l | tr -d ' ')
     [ "$nb_files" -eq 0 ] && exit 1
 
@@ -680,8 +641,6 @@ source_scan() {
     parse_preset_flags "$raw_preset"
 
     log_info "${BLUE}Scanning $nb_files source files...${NC}\n"
-
-    export IS_SOURCE_SCAN=true
 
     if [ "$MODE_BLACKLIST" = true ]; then
         log_info "${CYAN}Mode: BLACKLIST - Hunting specific functions...${NC}"
@@ -692,11 +651,7 @@ source_scan() {
         scan_whitelist "$files_list" "$my_funcs"
     fi
 
-    if [ "$USE_JSON" = true ]; then
-        generate_json_output
-    else
-        log_info "\n${GREEN}Source audit complete.${NC}"
-    fi
+    log_info "\n${GREEN}Source audit complete.${NC}"
     exit 0
 }
 
