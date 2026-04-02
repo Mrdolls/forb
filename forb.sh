@@ -11,8 +11,8 @@ else
 fi
 
 # Constants
-VERSION="1.9.8"
-readonly VERSION="1.9.8"
+VERSION="1.9.81"
+readonly VERSION="1.9.81"
 readonly INSTALL_DIR="$HOME/.forb"
 readonly PRESET_DIR="$INSTALL_DIR/presets"
 readonly UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
@@ -88,31 +88,44 @@ generate_json_output() {
     echo -n "{"
     echo -n "\"target\":\"$TARGET\","
     echo -n "\"version\":\"$VERSION\","
+    echo -n "\"mode\":\"$( [ "$MODE_BLACKLIST" = true ] && echo "blacklist" || echo "whitelist" )\","
     echo -n "\"results\":["
 
-    for f_name in $forbidden_list; do
-        [ "$first_func" = false ] && echo -n ","
-        echo -n "{\"function\":\"$f_name\",\"locations\":["
-
-        safe_name=$(printf '%s\n' "$f_name" | sed 's/[.[\*^$]/\\&/g')
-        local locations=$(grep -E ":.*\b${safe_name}\b" <<< "$grep_res")
+    if [ "$MODE_BLACKLIST" = true ]; then
         local first_loc=true
-
-        while read -r line; do
+        while IFS= read -r line; do
             [ -z "$line" ] && continue
             [ "$first_loc" = false ] && echo -n ","
-
-            local f_path=$(echo "$line" | cut -d: -f1 | sed 's|^\./||')
-            local l_num=$(echo "$line" | cut -d: -f2)
-            echo -n "{\"file\":\"$f_path\",\"line\":$l_num}"
+            local fname=$(echo "$line" | grep -oP '(?<=-> )\S+')
+            local fpath=$(echo "$line" | grep -oP 'in \K\S+(?=:)')
+            local lnum=$(echo "$line"  | grep -oP ':\K[0-9]+$')
+            echo -n "{\"function\":\"$fname\",\"file\":\"$fpath\",\"line\":$lnum}"
             first_loc=false
-        done <<< "$locations"
-        echo -n "]}"
-        first_func=false
-    done
+        done <<< "$BLACKLIST_JSON_DATA"
+    else
+        for f_name in $forbidden_list; do
+            [ "$first_func" = false ] && echo -n ","
+            echo -n "{\"function\":\"$f_name\",\"locations\":["
+
+            safe_name=$(printf '%s\n' "$f_name" | sed 's/[.[\*^$]/\\&/g')
+            local locations=$(grep -E ":.*\b${safe_name}\b" <<< "$grep_res")
+            local first_loc=true
+
+            while read -r line; do
+                [ -z "$line" ] && continue
+                [ "$first_loc" = false ] && echo -n ","
+                local f_path=$(echo "$line" | cut -d: -f1 | sed 's|^\./||')
+                local l_num=$(echo "$line" | cut -d: -f2)
+                echo -n "{\"file\":\"$f_path\",\"line\":$l_num}"
+                first_loc=false
+            done <<< "$locations"
+            echo -n "]}"
+            first_func=false
+        done
+    fi
 
     echo -n "],"
-    echo -n "\"status\":$( [ -z "$forbidden_list" ] && echo "\"PERFECT\"" || echo "\"FAILURE\"" )"
+    echo -n "\"status\":$( [ -z "$forbidden_list" ] && [ -z "$BLACKLIST_JSON_DATA" ] && echo "\"PERFECT\"" || echo "\"FAILURE\"" )"
     echo "}"
 }
 
@@ -476,6 +489,13 @@ get_user_defined_funcs() {
 
 parse_preset_flags() {
     local raw_content="$1"
+
+    if [ -z "$raw_content" ]; then
+        log_info "${YELLOW}[Warning] Preset is empty.${NC}"
+        AUTH_FUNCS=""
+        return
+    fi
+
     raw_content=$(echo "$raw_content" | sed 's/#.*//g')
 
     if echo "$raw_content" | grep -q "BLACKLIST_MODE"; then
@@ -496,22 +516,32 @@ parse_preset_flags() {
     fi
 
     AUTH_FUNCS=$(echo "$raw_content" | tr ',' ' ' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+
+    if [ -z "$AUTH_FUNCS" ] && [ "$MODE_BLACKLIST" = false ]; then
+        log_info "${YELLOW}[Warning] Preset loaded but function list is empty.${NC}"
+    fi
 }
 
 scan_blacklist() {
     local files="$1"
     export BLACKLIST_FUNCS=$(echo "$AUTH_FUNCS" | tr '\n' ' ')
+    BLACKLIST_JSON_DATA=""
 
-    echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
+    local raw_output
+    export ALLOW_MLX=0
+    [ "$USE_MLX" = true ] && export ALLOW_MLX=1
+    raw_output=$(echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
         my %forbidden = map { $_ => 1 } split(" ", $ENV{BLACKLIST_FUNCS});
         my $found = 0;
 
         foreach my $file (@ARGV) {
+            if ($ENV{ALLOW_MLX} == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
+                next;
+            }
             open(my $fh, "<", $file) or next;
             my $content = do { local $/; <$fh> };
             close($fh);
 
-            # Nettoyage des commentaires et strings
             $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
             $content =~ s{//.*}{}g;
             $content =~ s{("(?:\\.|[^"\\])*")}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
@@ -520,22 +550,36 @@ scan_blacklist() {
             my @lines = split(/\n/, $content);
             for (my $i = 0; $i < @lines; $i++) {
                 my $line = $lines[$i];
-
                 while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
                     my $fname = $1;
-
-                    # Si la fonction est dans la blacklist -> ERREUR
                     if ($forbidden{$fname}) {
                         my $clean_file = $file;
                         $clean_file =~ s|^\./||;
-                        printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                        printf "MATCH -> %-15s in %s:%d\n", $fname, $clean_file, $i + 1;
                         $found = 1;
                     }
                 }
             }
         }
-        if (!$found) { print "  \033[32m[OK]\033[0m No forbidden functions detected in blacklist mode.\n"; }
-    '
+        if (!$found) { print "OK\n"; }
+    ')
+
+    if [ "$USE_JSON" = true ]; then
+        BLACKLIST_JSON_DATA="$raw_output"
+    else
+        if echo "$raw_output" | grep -q "^OK$"; then
+            echo -e "  ${GREEN}[OK]${NC} No forbidden functions detected in blacklist mode."
+        else
+            echo "$raw_output" | while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                local fname=$(echo "$line" | awk '{print $3}')
+                local loc=$(echo "$line"   | awk '{print $5}')
+                local fpath="${loc%:*}"
+                local lnum="${loc##*:}"
+                printf "  ${RED}[FORBIDDEN]${NC} -> ${BOLD}%-15s${NC} in ${BLUE}%s:%s${NC}\n" "$fname" "$fpath" "$lnum"
+            done
+        fi
+    fi
 }
 
 scan_whitelist() {
@@ -918,7 +962,7 @@ uninstall_script() {
 
 check_dependencies() {
     local missing_deps=0
-    local deps=("nm" "perl" "curl" "tar" "bc")
+    local deps=("nm" "perl" "curl" "tar")
 
     for cmd in "${deps[@]}"; do
         if ! command -v "$cmd" &> /dev/null; then
@@ -926,6 +970,10 @@ check_dependencies() {
             missing_deps=$((missing_deps + 1))
         fi
     done
+
+    if ! command -v bc &> /dev/null; then
+        echo -e "${YELLOW}[!] Warning: 'bc' is not installed. Execution time (-t) will be unavailable.${NC}"
+    fi
 
     if [ "$missing_deps" -gt 0 ]; then
         echo -e "${YELLOW}Please install the missing packages to use ForbCheck.${NC}"
