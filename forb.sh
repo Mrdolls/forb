@@ -564,10 +564,12 @@ parse_preset_flags() {
 scan_blacklist() {
     local files="$1"
     export BLACKLIST_FUNCS=$(echo "$AUTH_FUNCS" | tr '\n' ' ')
+    export USE_JSON
 
     echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
         my %forbidden = map { $_ => 1 } split(" ", $ENV{BLACKLIST_FUNCS});
         my $count = 0;
+        my $json_mode = $ENV{USE_JSON};
 
         foreach my $file (@ARGV) {
             open(my $fh, "<", $file) or next;
@@ -588,16 +590,20 @@ scan_blacklist() {
                     if ($forbidden{$fname}) {
                         my $clean_file = $file;
                         $clean_file =~ s|^\./||;
-                        printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                        if ($json_mode ne "true") {
+                            printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                        }
                         $count++;
                     }
                 }
             }
         }
-        if ($count == 0) {
-            print "  \033[32m[OK]\033[0m No forbidden functions detected in blacklist mode.\n";
-        } else {
-            print "\n  \033[0;31m[!] Total: $count forbidden function(s) detected.\033[0m\n";
+        if ($json_mode ne "true") {
+            if ($count == 0) {
+                print "  \033[32m[OK]\033[0m No forbidden functions detected in blacklist mode.\n";
+            } else {
+                print "\n  \033[0;31m[!] Total: $count forbidden function(s) detected.\033[0m\n";
+            }
         }
     '
 }
@@ -607,6 +613,7 @@ scan_whitelist() {
     local user_funcs="$2"
     local keywords="if while for return sizeof switch else case default do static const volatile struct union enum typedef extern inline unsigned signed short long int char float double void bool va_arg va_start va_end va_list NULL del f"
     local macros="WIFEXITED WEXITSTATUS WIFSIGNALED WTERMSIG S_ISDIR S_ISREG"
+    export USE_JSON
 
     export ALLOW_MLX=0
     [ "$USE_MLX" = true ] && export ALLOW_MLX=1
@@ -617,6 +624,7 @@ scan_whitelist() {
         my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST});
         my $allow_mlx = $ENV{ALLOW_MLX};
         my $count = 0;
+        my $json_mode = $ENV{USE_JSON};
 
         foreach my $file (@ARGV) {
             if ($allow_mlx == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
@@ -643,16 +651,21 @@ scan_whitelist() {
 
                     my $clean_file = $file;
                     $clean_file =~ s|^\./||;
-
-                    printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                    if ($json_mode ne "true") {
+                        printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
+                    } else {
+                        print "MATCH|-> $fname|in $clean_file:$i+1\n";
+                    }
                     $count++;
                 }
             }
         }
-        if ($count == 0) {
-            print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n";
-        } else {
-            print "\n  \033[0;31m[!] Total: $count unauthorized function(s) detected.\033[0m\n";
+        if ($json_mode ne "true") {
+            if ($count == 0) {
+                print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n";
+            } else {
+                print "\n  \033[0;31m[!] Total: $count unauthorized function(s) detected.\033[0m\n";
+            }
         }
     '
 }
@@ -669,17 +682,22 @@ source_scan() {
     parse_preset_flags "$raw_preset"
 
     log_info "${BLUE}Scanning $nb_files source files...${NC}\n"
-
+    local scan_output
     if [ "$MODE_BLACKLIST" = true ]; then
-        log_info "${CYAN}Mode: BLACKLIST - Hunting specific functions...${NC}"
-        scan_blacklist "$files_list"
+        scan_output=$(scan_blacklist "$files_list")
     else
-        log_info "${BLUE}Building compiler-grade function shield (Whitelist Mode)...${NC}"
         local my_funcs=$(get_user_defined_funcs)
-        scan_whitelist "$files_list" "$my_funcs"
+        scan_output=$(scan_whitelist "$files_list" "$my_funcs")
     fi
 
-    log_info "\n${GREEN}Source audit complete.${NC}"
+    if [ "$USE_JSON" = true ]; then
+        export JSON_RAW_DATA="$scan_output"
+        export IS_SOURCE_SCAN=true
+        generate_json_output
+    else
+        echo -e "$scan_output"
+        log_info "\n${GREEN}Source audit complete.${NC}"
+    fi
     exit 0
 }
 
@@ -889,6 +907,7 @@ show_help() {
 
     echo -e "\n${BOLD}Maintenance:${NC}"
     printf "  %-24s %s\n" "-t, --time" "Show execution duration"
+    printf "  %-24s %s\n" "--version" "Show version's forbCheck"
     printf "  %-24s %s\n" "-up, --update" "Check and install latest version"
     printf "  %-24s %s\n" "--remove" "Remove ForbCheck"
     exit 0
@@ -1035,6 +1054,7 @@ set -- "${args[@]}"
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help) show_help ;;
+        --version) log_info "V$VERSION"; exit 0;;
         --json) USE_JSON=true; shift ;;
         -up|--update) update_script ;;
         --remove) uninstall_script ;;
