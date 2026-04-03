@@ -1000,9 +1000,15 @@ uninstall_script() {
     case "$choice" in
         [yY][eE][sS]|[yY])
             log_info "${YELLOW}Uninstalling ForbCheck...${NC}"
+            rm -f "$HOME/.local/bin/forb"
             sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
-            rm -rf "$INSTALL_DIR"
+            sed -i '/# Autocompletion & ForbCheck/,/source ~\/.forb\/forb_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
+            sed -i '/# ForbCheck Autocompletion/d' ~/.zshrc ~/.bashrc 2>/dev/null
+            sed -i '/forb_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
+            sed -i '/autoload -U +X bashcompinit/d' ~/.zshrc ~/.bashrc 2>/dev/null
+            rm -rf "$HOME/.forb"
             log_info "${GREEN}[✔] ForbCheck has been successfully removed.${NC}"
+            echo -e "${YELLOW}Note: Run 'exec zsh' to refresh your shell.${NC}"
             exit 0
             ;;
         *)
