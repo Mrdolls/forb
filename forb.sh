@@ -11,20 +11,19 @@ else
 fi
 
 # Constants
-VERSION="1.9.92"
-readonly VERSION="1.9.92"
+readonly VERSION="1.9.93"
 readonly INSTALL_DIR="$HOME/.forb"
 readonly PRESET_DIR="$INSTALL_DIR/presets"
 readonly UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
 
 # Global State Variables (Mutable)
-AUTH_FILE="$PRESET_DIR/default.preset"
+ACTIVE_PRESET="$PRESET_DIR/default.preset"
 USE_JSON=false
 USE_PRESET=0
 SHOW_ALL=false
 USE_MLX=false
 USE_MATH=false
-MODE_BLACKLIST=false
+BLACKLIST_MODE=false
 FULL_PATH=false
 VERBOSE=false
 TARGET=""
@@ -96,7 +95,7 @@ generate_json_output() {
     echo -n "\"target\":\"$TARGET\","
     echo -n "\"version\":\"$VERSION\","
     echo -n "\"forbidden_count\":$count_val,"
-    echo -n "\"mode\":\"$( [ "$MODE_BLACKLIST" = true ] && echo "blacklist" || echo "whitelist" )\","
+    echo -n "\"mode\":\"$( [ "$BLACKLIST_MODE" = true ] && echo "blacklist" || echo "whitelist" )\","
     echo -n "\"results\":["
 
     if [ "$IS_SOURCE_SCAN" = true ]; then
@@ -138,75 +137,104 @@ generate_json_output() {
     echo "}"
 }
 
+open_editor() {
+    local target_file="$1"
+    command -v code &>/dev/null && code --wait "$target_file" || vim "$target_file" || nano "$target_file"
+}
+
 # ==============================================================================
 #  SECTION 3: PRESET MANAGEMENT
 # ==============================================================================
 
-select_preset() {
-    local current_dir current_dir_lower preset_file base_name base_name_lower presets choice
+prompt_preset_menu() {
+    [ "$DISABLE_AUTO" == "true" ] && log_info "\n${YELLOW}${BOLD}Auto-detection disabled by --no-auto flag.${NC}"
+    log_info "${CYAN}${BOLD}Select a project preset:${NC}"
+
+    local presets=($(ls "$PRESET_DIR" 2>/dev/null | grep '\.preset$' | sed 's/\.preset//'))
+
+    if [ ${#presets[@]} -eq 0 ]; then
+        log_info "${RED}Error: No presets found in $PRESET_DIR.${NC}"
+        exit 1
+    fi
+
+    PS3=$'\n\033[1;36mEnter the number of your preset: \033[0m'
+    select choice in "${presets[@]}"; do
+        if [ -n "$choice" ]; then
+            export SELECTED_PRESET="$choice"
+            log_info "${GREEN}Loaded preset: ${BOLD}$SELECTED_PRESET${NC}"
+            break
+        fi
+    done >&2
+}
+
+auto_find_preset() {
+    local target_name_lower="$1"
+    local preset_file base_name base_name_lower
+
+    for preset_file in "$PRESET_DIR"/*.preset; do
+        [ -e "$preset_file" ] || continue
+        base_name=$(basename "$preset_file" .preset)
+        base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
+
+        if [[ "$target_name_lower" == *"$base_name_lower"* ]]; then
+            export SELECTED_PRESET="$base_name"
+            log_info "${CYAN}[Auto-Detect] Preset : ${BOLD}${base_name}${NC}"
+            return 0
+        fi
+    done
+    if find . -maxdepth 3 -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.cc" \) -print -quit | grep -q "."; then
+        if [ -f "$PRESET_DIR/cpp.preset" ]; then
+            log_info "${CYAN}[Auto-Detect] Preset : ${BOLD}cpp${NC} (C++ detected)"
+            export SELECTED_PRESET="cpp"
+            return 0
+        fi
+    fi
+    return 1
+}
+
+resolve_preset() {
+    local mode="$1"
+    local project_name project_name_lower
+
+    if [ "$DISABLE_PRESET" = true ]; then
+        export SELECTED_PRESET="default"
+        return 0
+    fi
+
+    project_name=$([ -n "$TARGET" ] && basename "$TARGET" || basename "$PWD")
+
+    if [ "$USE_PRESET" -eq 1 ]; then
+        export SELECTED_PRESET="$project_name"
+        return 0
+    fi
     if [ "$DISABLE_AUTO" = "true" ] && [ "$USE_JSON" = true ]; then
         export SELECTED_PRESET="default"
         return 0
     fi
     if [ "$DISABLE_AUTO" != "true" ] && [ -z "$SELECTED_PRESET" ]; then
-        current_dir=$(basename "$PWD")
-        current_dir_lower=$(echo "$current_dir" | tr '[:upper:]' '[:lower:]')
-        for preset_file in "$PRESET_DIR"/*.preset; do
-            [ -e "$preset_file" ] || continue
-            base_name=$(basename "$preset_file" .preset)
-            base_name_lower=$(echo "$base_name" | tr '[:upper:]' '[:lower:]')
-            if [[ "$current_dir_lower" == *"$base_name_lower"* ]]; then
-                export SELECTED_PRESET="$base_name"
-                log_info "${CYAN}[Auto-Detect] Project detected: ${BOLD}${base_name}${NC}"
-                return 0
-            fi
-        done
-        if find . -maxdepth 2 -name "*.cpp" -print -quit | grep -q "."; then
-            if [ -f "$PRESET_DIR/cpp.preset" ]; then
-                log_info "${CYAN}[Auto-Detect] C++ files detected. Loading 'cpp' preset.${NC}"
-                export SELECTED_PRESET="cpp"
-                return 0
-            fi
-        fi
+        project_name_lower=$(echo "$project_name" | tr '[:upper:]' '[:lower:]')
+        auto_find_preset "$project_name_lower"
     fi
-    if [ "$USE_JSON" = true ] && [ -z "$SELECTED_PRESET" ]; then
+    [ -n "$SELECTED_PRESET" ] && return 0
+
+    if [ "$USE_JSON" = true ] || [ "$mode" == "binary" ]; then
         export SELECTED_PRESET="default"
         return 0
     fi
-    {
-        [ "$DISABLE_AUTO" == "true" ] && log_info "\n${YELLOW}${BOLD}Auto-detection disabled by --no-auto flag.${NC}"
-        log_info "${CYAN}${BOLD}Select a project preset:${NC}"
-
-        presets=($(ls "$PRESET_DIR" 2>/dev/null | grep '\.preset$' | sed 's/\.preset//'))
-
-        if [ ${#presets[@]} -eq 0 ]; then
-            log_info "${RED}Error: No presets found in $PRESET_DIR.${NC}"
-            exit 1
-        fi
-
-        PS3=$'\n\033[1;36mEnter the number of your preset: \033[0m'
-        select choice in "${presets[@]}"; do
-            if [ -n "$choice" ]; then
-                export SELECTED_PRESET="$choice"
-                log_info "${GREEN}Loaded preset: ${BOLD}$SELECTED_PRESET${NC}"
-                break
-            fi
-        done
-    } >&2
+    prompt_preset_menu
 }
 
 load_preset() {
     local target_name="$1"
     local available_presets
 
-    mkdir -p "$PRESET_DIR"
-    AUTH_FILE="$PRESET_DIR/${target_name}.preset"
+    ACTIVE_PRESET="$PRESET_DIR/${target_name}.preset"
 
-    if [ "$target_name" = "default" ] && [ ! -f "$AUTH_FILE" ]; then
-        touch "$AUTH_FILE"
+    if [ "$target_name" = "default" ] && [ ! -f "$ACTIVE_PRESET" ]; then
+        touch "$ACTIVE_PRESET"
     fi
 
-    if [ ! -f "$AUTH_FILE" ]; then
+    if [ ! -f "$ACTIVE_PRESET" ]; then
         available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
 
         if [ "$USE_JSON" = true ]; then
@@ -227,7 +255,6 @@ list_presets() {
     local should_exit="${1:-1}"
     local available_presets
 
-    mkdir -p "$PRESET_DIR"
     available_presets=$(find "$PRESET_DIR" -maxdepth 1 -name "*.preset" -exec basename {} .preset \; | tr '\n' ',' | sed 's/,/, /g' | sed 's/, $//')
 
     if [ -z "$available_presets" ]; then
@@ -253,7 +280,6 @@ get_presets() {
     fi
 
     log_info "${BLUE}Downloading default presets from GitHub...${NC}"
-    mkdir -p "$PRESET_DIR"
 
     if curl -sL "https://github.com/Mrdolls/forbCheck/archive/refs/heads/main.tar.gz" | tar -xz -C /tmp "forbCheck-main/presets" 2>/dev/null; then
         if [[ "$mode" == "manual" ]]; then
@@ -284,7 +310,6 @@ get_presets() {
 }
 
 open_presets() {
-    mkdir -p "$PRESET_DIR"
     log_info "\033[32mOpening presets directory: $PRESET_DIR\033[0m"
 
     if command -v explorer.exe > /dev/null; then
@@ -321,7 +346,6 @@ EOF
 
 create_preset() {
     local preset_name new_file
-    mkdir -p "$PRESET_DIR"
 
     echo -ne "${BLUE}${BOLD}Enter the name of the new preset (e.g., minishell): ${NC}"
     read -r preset_name
@@ -342,7 +366,7 @@ create_preset() {
         touch "$new_file"
     fi
 
-    command -v code &>/dev/null && code --wait "$new_file" || vim "$new_file" || nano "$new_file"
+    open_editor "$new_file"
     log_info "${GREEN}[✔] Preset '${preset_name}' saved!${NC}"
     exit 0
 }
@@ -380,8 +404,9 @@ remove_preset() {
 }
 
 edit_list() {
-    [ ! -f "$AUTH_FILE" ] && mkdir -p "$INSTALL_DIR" && touch "$AUTH_FILE"
-    command -v code &>/dev/null && code --wait "$AUTH_FILE" || vim "$AUTH_FILE" || nano "$AUTH_FILE"
+    [ ! -f "$ACTIVE_PRESET" ] && touch "$ACTIVE_PRESET"
+    open_editor "$ACTIVE_PRESET"
+
     exit 0
 }
 
@@ -389,7 +414,7 @@ show_list() {
     local should_exit="${1:-1}"
     local f
 
-    if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
+    if [ ! -f "$ACTIVE_PRESET" ] || [ ! -s "$ACTIVE_PRESET" ]; then
         log_info "${YELLOW}No authorized functions list found. (Use -e to create one)${NC}"
         exit 0
     fi
@@ -407,7 +432,8 @@ show_list() {
     else
         log_info "${BLUE}${BOLD}Authorized functions (Default):${NC} ${CYAN}(Use -e to edit)${NC}"
         log_info "---------------------------------------"
-        tr ',' '\n' < "$AUTH_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | column -c 80
+        tr ',' '\n' < "$ACTIVE_PRESET
+    " | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$' | column -c 80
     fi
 
     [ "$should_exit" -eq 1 ] && exit 0
@@ -421,18 +447,22 @@ process_list() {
         shift
     done
 
-    if [ ! -f "$AUTH_FILE" ]; then
-        mkdir -p "$(dirname "$AUTH_FILE")"
-        touch "$AUTH_FILE"
+    if [ ! -f "$ACTIVE_PRESET" ]; then
+        mkdir -p "$(dirname "$ACTIVE_PRESET
+    ")"
+        touch "$ACTIVE_PRESET
+    "
     fi
 
-    if [ -L "$AUTH_FILE" ]; then
-        echo "Error: AUTH_FILE must be a regular file, not a symlink"
+    if [ -L "$ACTIVE_PRESET" ]; then
+        echo "Error: ACTIVE_PRESET
+     must be a regular file, not a symlink"
         exit 1
     fi
 
-    if [ -f "$AUTH_FILE" ]; then
-        mapfile -t AUTH_FUNCS_ARR < <(tr ',' '\n' < "$AUTH_FILE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+    if [ -f "$ACTIVE_PRESET" ]; then
+        mapfile -t AUTH_FUNCS_ARR < <(tr ',' '\n' < "$ACTIVE_PRESET
+    " | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
     fi
     show_list 1 $check_args
 }
@@ -468,8 +498,9 @@ auto_detect_target() {
     if [ -f "Makefile" ]; then
         make_target=$(grep -m 1 -E "^NAME[[:space:]]*=" Makefile | cut -d '=' -f2 | tr -d ' ' | tr -d '"' | tr -d "'")
         if [ -n "$make_target" ] && [ -f "$make_target" ] && nm "$make_target" &>/dev/null; then
+            export AUTO_BIN_DETECTED=true
             TARGET="$make_target"
-            log_info "${CYAN}[Auto-Detect] Target found via Makefile: $TARGET${NC}"
+            log_info "${CYAN}[Auto-Detect] Binary : ${BOLD}$TARGET${NC} (via Makefile)"
             return 0
         fi
     fi
@@ -479,8 +510,9 @@ auto_detect_target() {
 
     for fallback_target in $fallback_targets; do
         if [ -n "$fallback_target" ] && [ -f "$fallback_target" ] && nm "$fallback_target" &>/dev/null; then
+            export AUTO_BIN_DETECTED=true
             TARGET="$fallback_target"
-            log_info "${CYAN}[Auto-Detect] Target found via file search: $TARGET${NC}"
+            log_info "${CYAN}[Auto-Detect] Binary : ${BOLD}$TARGET${NC} (via file search)"
             return 0
         fi
     done
@@ -538,7 +570,7 @@ parse_preset_flags() {
     raw_content=$(echo "$raw_content" | sed 's/#.*//g')
 
     if echo "$raw_content" | grep -q "BLACKLIST_MODE"; then
-        export MODE_BLACKLIST=true
+        export BLACKLIST_MODE=true
         raw_content=$(echo "$raw_content" | sed 's/BLACKLIST_MODE//g')
     fi
 
@@ -556,26 +588,47 @@ parse_preset_flags() {
 
     AUTH_FUNCS=$(echo "$raw_content" | tr ',' ' ' | tr -s ' ' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
 
-    if [ -z "$AUTH_FUNCS" ] && [ "$MODE_BLACKLIST" = false ]; then
+    if [ -z "$AUTH_FUNCS" ] && [ "$BLACKLIST_MODE" = false ]; then
         log_info "${YELLOW}[Warning] Preset loaded but function list is empty.${NC}"
     fi
 }
 
-scan_blacklist() {
+scan_source_engine() {
     local files="$1"
-    export BLACKLIST_FUNCS=$(echo "$AUTH_FUNCS" | tr '\n' ' ')
+    local user_funcs="$2"
+
     export USE_JSON
+    export BLACKLIST_MODE
+
+    if [ "$BLACKLIST_MODE" = true ]; then
+        export BLACKLIST_FUNCS=$(echo "$AUTH_FUNCS" | tr '\n' ' ')
+    else
+        local keywords="if while for return sizeof switch else case default do static const volatile struct union enum typedef extern inline unsigned signed short long int char float double void bool va_arg va_start va_end va_list NULL del f"
+        local macros="WIFEXITED WEXITSTATUS WIFSIGNALED WTERMSIG S_ISDIR S_ISREG"
+        export ALLOW_MLX=0
+        [ "$USE_MLX" = true ] && export ALLOW_MLX=1
+        export WHITELIST="$(echo "$AUTH_FUNCS" | tr '\n' ' ') $user_funcs $keywords $macros"
+    fi
 
     echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
-        my %forbidden = map { $_ => 1 } split(" ", $ENV{BLACKLIST_FUNCS});
+        my $is_blacklist = ($ENV{BLACKLIST_MODE} eq "true");
+        my %forbidden = map { $_ => 1 } split(" ", $ENV{BLACKLIST_FUNCS} || "");
+        my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST} || "");
+        my $allow_mlx = $ENV{ALLOW_MLX} || 0;
         my $count = 0;
         my $json_mode = $ENV{USE_JSON};
 
         foreach my $file (@ARGV) {
+            # En whitelist, on passe les fichiers MLX si autorisé
+            if (!$is_blacklist && $allow_mlx == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
+                next;
+            }
+
             open(my $fh, "<", $file) or next;
             my $content = do { local $/; <$fh> };
             close($fh);
 
+            # --- LE BOUCLIER ANTI-QUOTES ET COMMENTAIRES (Factorisé !) ---
             $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
             $content =~ s{//.*}{}g;
             $content =~ s{("(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
@@ -586,111 +639,60 @@ scan_blacklist() {
 
                 while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
                     my $fname = $1;
+                    my $is_illegal = 0;
 
-                    if ($forbidden{$fname}) {
+                    # Logique de détection unifiée
+                    if ($is_blacklist) {
+                        $is_illegal = 1 if $forbidden{$fname};
+                    } else {
+                        next if length($fname) <= 2;
+                        next if $safe{$fname};
+                        next if ($allow_mlx == 1 && $fname =~ /^mlx_/);
+                        $is_illegal = 1;
+                    }
+
+                    # Formatage de la sortie
+                    if ($is_illegal) {
                         my $clean_file = $file;
                         $clean_file =~ s|^\./||;
                         if ($json_mode ne "true") {
                             printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
                         } else {
-                            print "MATCH|-> $fname|in $clean_file:$i+1\n";
+                            my $lnum = $i + 1;
+                            print "MATCH|-> $fname|in $clean_file:$lnum\n";
                         }
                         $count++;
                     }
                 }
             }
         }
-        if ($json_mode ne "true") {
-            if ($count == 0) {
-                print "  \033[32m[OK]\033[0m No forbidden functions detected in blacklist mode.\n";
-            } else {
-                print "\n  \033[0;31m[!] Total: $count forbidden function(s) detected.\033[0m\n";
-            }
-        }
-    '
-}
 
-scan_whitelist() {
-    local files="$1"
-    local user_funcs="$2"
-    local keywords="if while for return sizeof switch else case default do static const volatile struct union enum typedef extern inline unsigned signed short long int char float double void bool va_arg va_start va_end va_list NULL del f"
-    local macros="WIFEXITED WEXITSTATUS WIFSIGNALED WTERMSIG S_ISDIR S_ISREG"
-    export USE_JSON
-
-    export ALLOW_MLX=0
-    [ "$USE_MLX" = true ] && export ALLOW_MLX=1
-
-    export WHITELIST="$(echo "$AUTH_FUNCS" | tr '\n' ' ') $user_funcs $keywords $macros"
-
-    echo "$files" | tr '\n' '\0' | xargs -0 perl -0777 -e '
-        my %safe = map { $_ => 1 } split(" ", $ENV{WHITELIST});
-        my $allow_mlx = $ENV{ALLOW_MLX};
-        my $count = 0;
-        my $json_mode = $ENV{USE_JSON};
-
-        foreach my $file (@ARGV) {
-            if ($allow_mlx == 1 && ($file =~ m{/mlx_} || $file =~ m{/mlx/} || $file =~ m{/minilibx/})) {
-                next;
-            }
-            open(my $fh, "<", $file) or next;
-            my $content = do { local $/; <$fh> };
-            close($fh);
-
-            $content =~ s{(/\*.*?\*/)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
-            $content =~ s{//.*}{}g;
-            $content =~ s{("(?:\\.|[^"\\])*"|\x27(?:\\.|[^\x27\\])*\x27)}{ my $c = $1; my $n = () = $c =~ /\n/g; "\n" x $n }egs;
-
-            my @lines = split(/\n/, $content);
-            for (my $i = 0; $i < @lines; $i++) {
-                my $line = $lines[$i];
-
-                while ($line =~ /\b([a-zA-Z_]\w*)\s*\(/g) {
-                    my $fname = $1;
-
-                    next if length($fname) <= 2;
-                    next if $safe{$fname};
-                    next if ($allow_mlx == 1 && $fname =~ /^mlx_/);
-
-                    my $clean_file = $file;
-                    $clean_file =~ s|^\./||;
-                    if ($json_mode ne "true") {
-                        printf "  \033[31m[FORBIDDEN]\033[0m -> \033[1m%-15s\033[0m in \033[34m%s:%d\033[0m\n", $fname, $clean_file, $i + 1;
-                    } else {
-                        print "MATCH|-> $fname|in $clean_file:$i+1\n";
-                    }
-                    $count++;
-                }
-            }
-        }
+        # Message de fin
         if ($json_mode ne "true") {
             if ($count == 0) {
                 print "  \033[32m[OK]\033[0m No unauthorized functions detected.\n";
             } else {
-                print "\n  \033[0;31m[!] Total: $count unauthorized function(s) detected.\033[0m\n";
+                print "\n  \033[0;31m[!] Total: $count infraction(s) detected.\033[0m\n";
             }
         }
     '
 }
 
 source_scan() {
-    select_preset
+    resolve_preset "source"
     load_preset "$SELECTED_PRESET" || { log_info "${RED}Error: Preset not found.${NC}"; exit 1; }
 
     local files_list=$(find . -maxdepth 5 -type f \( -name "*.c" -o -name "*.cpp" \))
     local nb_files=$(echo "$files_list" | wc -l | tr -d ' ')
     [ "$nb_files" -eq 0 ] && exit 1
 
-    local raw_preset=$(cat "$AUTH_FILE" 2>/dev/null)
+    local raw_preset=$(cat "$ACTIVE_PRESET" 2>/dev/null)
     parse_preset_flags "$raw_preset"
 
     log_info "${BLUE}Scanning $nb_files source files...${NC}\n"
     local scan_output
-    if [ "$MODE_BLACKLIST" = true ]; then
-        scan_output=$(scan_blacklist "$files_list")
-    else
-        local my_funcs=$(get_user_defined_funcs)
-        scan_output=$(scan_whitelist "$files_list" "$my_funcs")
-    fi
+    local my_funcs=$(get_user_defined_funcs)
+    scan_output=$(scan_source_engine "$files_list" "$my_funcs")
 
     if [ "$USE_JSON" = true ]; then
         export JSON_RAW_DATA="$scan_output"
@@ -724,7 +726,7 @@ filter_forbidden_functions() {
         grep -qx "$func" <<< "$MY_DEFINED" && continue
         local is_authorized=false
 
-        if [ "$MODE_BLACKLIST" = true ]; then
+        if [ "$BLACKLIST_MODE" = true ]; then
             grep -qx "$func" <<< "$AUTH_FUNCS" || is_authorized=true
         else
             grep -qx "$func" <<< "$AUTH_FUNCS" && is_authorized=true
@@ -1038,7 +1040,7 @@ check_dependencies() {
 # 1. Pre-process arguments (handle split/combined flags)
 args=()
 for arg in "$@"; do
-    if [[ "$arg" == "-mlx" || "$arg" == "-lm" || "$arg" == "-up" || "$arg" == "-op" || "$arg" == "-lp" || "$arg" == "-cp" || "$arg" == "-rp" || "$arg" == "-gp" || "$arg" == "-np" ]]; then
+    if [[ "$arg" =~ ^-(mlx|lm|up|op|lp|cp|rp|gp|np)$ ]]; then
         args+=("$arg")
     elif [[ "$arg" == "--"* ]]; then
         args+=("$arg")
@@ -1061,7 +1063,7 @@ while [[ $# -gt 0 ]]; do
         -up|--update) update_script ;;
         --remove) uninstall_script ;;
         --no-auto) DISABLE_AUTO=true; shift ;;
-        -b|--blacklist) export MODE_BLACKLIST=true; shift ;;
+        -b|--blacklist) export BLACKLIST_MODE=true; shift ;;
         -s|--scan-source) FORCE_SOURCE_SCAN=true; shift ;;
         -v) VERBOSE=true; shift ;;
         -p|--full-path) FULL_PATH=true; shift ;;
@@ -1091,6 +1093,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+mkdir -p "$PRESET_DIR"
 check_dependencies
 
 if [ "$USE_JSON" = false ]; then
@@ -1106,7 +1109,15 @@ if [ "$FORCE_SOURCE_SCAN" = true ]; then
 fi
 
 if [ -z "$TARGET" ]; then
-    if ! auto_detect_target; then
+    if [ "$DISABLE_AUTO" = true ]; then
+        if [ "$USE_JSON" = true ]; then
+             echo "{\"target\":\"\",\"version\":\"$VERSION\",\"error\":\"No target specified and auto-detection is disabled.\",\"status\":\"FAILURE\"}"
+        else
+             log_info "${RED}Error: No target specified and auto-detection is disabled (--no-auto).${NC}"
+             log_info "${CYAN}Usage: forb --no-auto <binary_name>  OR  forb --no-auto -s${NC}"
+        fi
+        exit 1
+    elif ! auto_detect_target; then
         log_info "${RED}[Auto-Detect] No binary found.${YELLOW} -> Falling back to Source Scan...${NC}\n"
         source_scan
     fi
@@ -1115,44 +1126,28 @@ elif [ ! -f "$TARGET" ]; then
     source_scan
 fi
 
-if ! nm "$TARGET" &>/dev/null; then
-    if [ "$USE_JSON" = true ]; then
-         echo "{\"target\":\"$TARGET\",\"version\":\"$VERSION\",\"error\":\"$TARGET is not a valid binary or object file.\",\"status\":\"FAILURE\"}"
-    else
-         log_info "${RED}Error: $TARGET is not a valid binary or object file.${NC}"
-    fi
-    exit 1
-fi
-
 # 5. Pre-run Setup (Updates, Cache, Libraries)
 auto_check_update
 check_binary_cache
 auto_detect_libraries
 
 # 6. Load Presets
-if [ "$USE_PRESET" -eq 0 ] && [ "$DISABLE_PRESET" = false ] && [ -n "$TARGET" ]; then
-    target_name=$(basename "$TARGET")
-    if [ -f "$PRESET_DIR/${target_name}.preset" ]; then
-        USE_PRESET=1
-        log_info "${CYAN}[Auto-Detect] Preset '${target_name}.preset' detected and loaded automatically.${NC}"
-    fi
+resolve_preset "binary"
+load_preset "$SELECTED_PRESET"
+
+if [ "$SELECTED_PRESET" = "default" ] && [ ! -s "$ACTIVE_PRESET" ]; then
+    log_info "${YELLOW}[Warning] Using 'default' preset, but it is currently empty.${NC}"
 fi
 
-if [ "$USE_PRESET" -eq 1 ]; then
-    load_preset "$(basename "$TARGET")"
-else
-    AUTH_FILE="$PRESET_DIR/default.preset"
-    if [ ! -f "$AUTH_FILE" ] || [ ! -s "$AUTH_FILE" ]; then
-        mkdir -p "$HOME/.forb"
-        touch "$AUTH_FILE"
-        log_info "${YELLOW}[Warning] No preset loaded and default.preset is empty. Using empty list.${NC}"
-    fi
-fi
-RAW_PRESET=$(cat "$AUTH_FILE" 2>/dev/null)
+RAW_PRESET=$(cat "$ACTIVE_PRESET" 2>/dev/null)
 parse_preset_flags "$RAW_PRESET"
 
 # 7. Print Execution Details
-log_info "${BLUE}Target bin:${NC} $TARGET\n"
+if [ "$AUTO_BIN_DETECTED" != true ] && [ -n "$TARGET" ]; then
+    log_info "${BLUE}Target bin:${NC} $TARGET"
+else
+    log_info ""
+fi
 
 if [ "$SET_WARNING" = true ]; then
     log_info "${YELLOW}Warning:${NC} Source content is newer than the binary."
