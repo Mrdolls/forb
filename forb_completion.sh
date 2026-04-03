@@ -9,7 +9,7 @@ _forb_completions() {
           -P --preset -np --no-preset -gp --get-presets -cp --create-preset \
           -lp --list-presets -op --open-presets -rp --remove-preset \
           -b --blacklist -v --verbose -f -p --full-path -a --all --no-auto \
-          -s --source -mlx -lm -t --time --version -up --update --remove"
+          -s --source -mlx -lm -t --time --version -up --update --remove --log"
 
     case "$prev" in
         -f)
