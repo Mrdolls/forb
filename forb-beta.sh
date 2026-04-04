@@ -12,10 +12,10 @@ fi
 
 # Constants
 readonly VERSION="1.10.0"
-readonly INSTALL_DIR="$HOME/.forb"
-readonly LOG_DIR="$HOME/.forb/logs"
+readonly INSTALL_DIR="$HOME/.forb-beta"
+readonly LOG_DIR="$HOME/.forb-beta/logs"
 readonly PRESET_DIR="$INSTALL_DIR/presets"
-readonly UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb.sh"
+readonly UPDATE_URL="https://raw.githubusercontent.com/Mrdolls/forb/main/forb-beta.sh"
 
 # Global State Variables (Mutable)
 ACTIVE_PRESET="$PRESET_DIR/default.preset"
@@ -127,7 +127,7 @@ generate_json_output() {
         while IFS= read -r line; do
             [ -z "$line" ] && continue
             [ "$first_loc" = false ] && echo -n ","
-            local fname=$(echo "$line" | perl -nle 'print $1 if /-> (\S+)/')
+            local fname=$(echo "$line" | perl -nle 'print $1 if /-> ([^|]+)/')
             local fpath=$(echo "$line" | perl -nle 'print $1 if /in (\S+?):/')
             local lnum=$(echo "$line"  | perl -nle 'print $1 if /:([0-9]+)$/')
             echo -n "{\"function\":\"$fname\",\"file\":\"$fpath\",\"line\":$lnum}"
@@ -480,7 +480,10 @@ process_list() {
     fi
 
     if [ -f "$ACTIVE_PRESET" ]; then
-        mapfile -t AUTH_FUNCS_ARR < <(tr ',' '\n' < "$ACTIVE_PRESET" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
+        AUTH_FUNCS_ARR=()
+        while IFS= read -r line; do
+             AUTH_FUNCS_ARR+=("$line")
+        done < <(tr ',' '\n' < "$ACTIVE_PRESET" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')
     fi
     show_list 1 $check_args
 }
@@ -1012,7 +1015,7 @@ auto_check_update() {
     local remote_version choice
 
     # Silent curl with 1-second timeout to prevent lag
-    remote_version=$(curl -s --max-time 1 "$UPDATE_URL" | grep "^VERSION=" | head -n 1 | cut -d'"' -f2)
+    remote_version=$(curl -s --max-time 1 "$UPDATE_URL" | grep "^readonly VERSION=" | head -n 1 | cut -d'"' -f2)
 
     if [ -n "$remote_version" ]; then
         if [ "$(version_to_int "$remote_version")" -gt "$(version_to_int "$VERSION")" ]; then
@@ -1032,30 +1035,32 @@ auto_check_update() {
 
 uninstall_script() {
     local choice
-    echo -ne "${RED}${BOLD}Warning: You are about to uninstall ForbCheck. All configurations will be lost. Continue? (y/n): ${NC}"
+    echo -ne "${RED}${BOLD}Warning: You are about to uninstall ForbCheck-Beta. All configurations will be lost. Continue? (y/n): ${NC}"
     read -r choice
     case "$choice" in
         [yY][eE][sS]|[yY])
-            log_info "${YELLOW}Uninstalling ForbCheck...${NC}"
-            rm -f "$HOME/.local/bin/forb"
+            log_info "${YELLOW}Uninstalling ForbCheck-Beta...${NC}"
+
+            rm -f "$HOME/.local/bin/forb-beta"
+
             if [ "$IS_MAC" = true ]; then
-                sed -i '' '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
-                sed -i '' '/# Autocompletion & ForbCheck/,/source ~\/.forb\/forb_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
-                sed -i '' '/# ForbCheck Autocompletion/d' ~/.zshrc ~/.bashrc 2>/dev/null
-                sed -i '' '/forb_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '' '/alias forb-beta=/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '' '/# Autocompletion & ForbCheck/,/source ~\/.forb-beta\/forb-beta_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '' '/# ForbCheck-Beta Autocompletion/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '' '/forb-beta_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
                 sed -i '' '/autoload -U +X compinit && compinit/d' ~/.zshrc ~/.bashrc 2>/dev/null
                 sed -i '' '/autoload -U +X bashcompinit && bashcompinit/d' ~/.zshrc ~/.bashrc 2>/dev/null
             else
-                sed -i '/alias forb=/d' ~/.zshrc ~/.bashrc 2>/dev/null
-                sed -i '/# Autocompletion & ForbCheck/,/source ~\/.forb\/forb_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
-                sed -i '/# ForbCheck Autocompletion/d' ~/.zshrc ~/.bashrc 2>/dev/null
-                sed -i '/forb_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '/alias forb-beta=/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '/# Autocompletion & ForbCheck/,/source ~\/.forb-beta\/forb-beta_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '/# ForbCheck-Beta Autocompletion/d' ~/.zshrc ~/.bashrc 2>/dev/null
+                sed -i '/forb-beta_completion\.sh/d' ~/.zshrc ~/.bashrc 2>/dev/null
                 sed -i '/autoload -U +X compinit && compinit/d' ~/.zshrc ~/.bashrc 2>/dev/null
                 sed -i '/autoload -U +X bashcompinit && bashcompinit/d' ~/.zshrc ~/.bashrc 2>/dev/null
             fi
+            rm -rf "$HOME/.forb-beta"
 
-            rm -rf "$HOME/.forb"
-            log_info "${GREEN}[✔] ForbCheck has been successfully removed.${NC}"
+            log_info "${GREEN}[✔] ForbCheck-Beta has been successfully removed.${NC}"
             echo -e "${YELLOW}Note: Run 'exec zsh' to refresh your shell.${NC}"
             safe_exit 0
             ;;
